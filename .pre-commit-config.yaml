@@ -1,19 +1,16 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
-fail_fast: true
+fail_fast: false
 repos:
+# Clean notebook output (prevent committing of large output such as plots)
 -   repo: local
     hooks:
-    - id: check-environment
-      name: Check that the right Python environment is active
-      pass_filenames: false
-      language: system
-      entry: "python -c 'import llmtrace'"
     - id: clean-notebooks
       name: Clean notebooks
       language: system
       files: .*\.ipynb$
-      entry: "jupyter nbconvert --clear-output"
+      entry: "conda run --name fin_agent jupyter nbconvert --clear-output"
+# General cleanup hooks
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
@@ -26,11 +23,19 @@ repos:
     - id: fix-byte-order-marker
     - id: mixed-line-ending
     - id: trailing-whitespace
-      exclude: ^react_logs/
+      exclude: ^logs/
+# Shellcheck .sh linter
+-   repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.7.2
+    hooks:
+    -   id: shellcheck
+        args: ["--severity=error"]
+        files: '.*\.sh$'
+# Make sure code is formatted according to standards
 -   repo: local
     hooks:
     - id: code-formatting
       name: Run auto-code formatters
       pass_filenames: false
       language: system
-      entry: "tools/run_formatting.sh"
+      entry: "conda run --name fin_agent tools/run_formatting.sh"

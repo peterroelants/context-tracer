@@ -1,7 +1,29 @@
+[project]
+name = "context-tracer"
+description = "Python Context Tracer"
+readme = "README.md"
+version = "0.0.1"
+license = {text = "Closed"}
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.11"
+dependencies = []
+
 [build-system]
-requires = ["setuptools>=46.4.0", "wheel"]
+requires = ["setuptools>=67", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.setuptools.package-data]
+"context_tracer" = ["py.typed"]
+
+[project.urls]
+Source = "TODO"
+
+
+# Tool configuration ###############################################
 [tool.black]
 line-length = 88
 target-version = ['py311']

@@ -1,0 +1,78 @@
+.tree {
+    position: relative;
+}
+
+/* Scale container dynamically with height of flame chart as flame chart gets updated dynamically.*/
+/* #flamechart-container {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    position: relative;
+} */
+
+
+/* Define variables used in tree-node */
+:root {
+    --indent: 1em;
+    --border-width: 2px;
+    --non-hover-grey: #eee;
+    --hover-grey: #ddd;
+}
+
+/* No left margin for root node */
+.tree > .tree-node {
+    margin-left: 0em;
+}
+
+.tree-node {
+    display: block;
+    color: #000;
+    margin: 0 auto 0.5em 0;
+    padding:  0 0 0 0;
+    border-top: var(--border-width) solid var(--non-hover-grey);
+    border-left: var(--border-width) solid var(--non-hover-grey);
+    border-bottom: var(--border-width) solid var(--non-hover-grey);
+
+    /* make content align with indent of summary */
+    &> .tree-node-body {
+        display: block;
+        margin: 0 auto 0 var(--indent);
+        position: relative;
+    }
+
+    &> .tree-node-header {
+        display: block;
+        background: var(--non-hover-grey);
+        padding: 0.25em 0 0.1em 0.5em;
+        margin: 0 auto 0 0;
+    }
+
+    /* Hover effect on full tree branch up until hovered node */
+    &:hover {
+        border-top: var(--border-width) solid var(--hover-grey);
+        border-left: var(--border-width) solid var(--hover-grey);
+        border-bottom: var(--border-width) solid var(--hover-grey);
+    }
+    /* Hover effect only on hovered node */
+    &:hover:not(:has(.tree-node:hover)) > .tree-node-header {
+        background: var(--hover-grey);
+    }
+}
+
+/* JSON Data formatting */
+.json-string {
+    display: inline;
+    font-family: monospace;
+    white-space: pre-wrap;
+}
+.json-key {
+    font-weight: bold;
+    color: black !important;
+}
+.json-separator {
+    font-weight: bold;
+    color: black !important;
+}
+.json-value {
+    color: black !important;
+}

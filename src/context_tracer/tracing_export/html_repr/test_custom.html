@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" type="text/css" href="style.css"/>
+    <script src="jsonview.js"></script>
+    <script src="tree_view.js"></script>
+</head>
+
+<body>
+<div class="tree">
+<script>
+const data_json = {
+    "name": "Root Node",
+    "data": {
+        "name": "test root node"
+    },
+    "children": [
+        {
+            "name": "Node A",
+            "data": {
+                "name": "test node a"
+            },
+            "children": []
+        },
+        {
+            "name": "Node B",
+            "data": {
+                "name": "test node b"
+            },
+            "children": [
+                {
+                    "name": "Node C",
+                    "data": {
+                        "name": "test node c",
+                        "test_list": [1, 2, 3],
+                    },
+                    "children": []
+                },
+                {
+                    "name": "Node D",
+                    "data": {
+                        "name": "test node d",
+                        "test_list": ["a", "b"],
+                    },
+                    "children": []
+                }
+            ]
+        },
+        {
+            "name": "Node E",
+            "data": {
+                "name": "test node e"
+            },
+            "children": [
+                {
+                    "name": "Node F",
+                    "data": {
+                        "key1": "Test\n123\Test\nHey",
+                        "key2": "value2",
+
+                    },
+                    "children": []
+                }
+            ]
+        }
+    ]
+};
+render_tree(data_json, document.querySelector(".tree"));
+</script>
+</div>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<!-- D3.js and d3-flame-graph Dependencies-->
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+<script type="text/javascript" src="https://d3js.org/d3.v7.min.js"></script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"></script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph-tooltip.min.js"></script>
+<!-- Custom stying and scripts -->
+{{ custom_css | safe }}
+{{ custom_js | safe }}
+</head>
+
+
+<body>
+<!-- View containers -->
+<h1 id="flamechart-title">Placeholder</h1>
+<div id="flamechart-container"></div>
+<div id="view-selected-node-container"></div>
+
+{% if data_json %}
+<!-- Data Object -->
+<script type="text/javascript">
+    var root_data_json = {{ data_json | safe }};
+    root_data_json = set_durations(root_data_json);
+    // Update title
+    if (root_data_json.name) {
+        document.getElementById("flamechart-title").innerHTML = root_data_json.name;
+    }
+</script>
+{% endif %}
+
+<!-- Render flame chart -->
+<script type="text/javascript">
+var flame_chart = render_flame_chart(
+    data_obj={{ 'root_data_json' if data_json else {} }},
+    parent_container_id="flamechart-container",
+    view_selected_node_container_id="view-selected-node-container",
+);
+</script>
+
+{% if websocket_url %}
+<!-- Websocket Connection -->
+<script type="text/javascript">
+const ws = new WebSocket("{{ websocket_url }}");
+console.log("Websocket created");
+ws.onmessage = function(event) {
+    // Recieve data from websocket
+    console.log("Websocket data received", event);
+    let obj = JSON.parse(event.data);
+    // Update title
+    document.getElementById("flamechart-title").innerHTML = obj.name;
+    // Update flame chart
+    update_flame_chart(flame_chart, obj)
+    console.log("Flame chart updated")
+};
+</script>
+{% endif %}
+</body>
+</html>

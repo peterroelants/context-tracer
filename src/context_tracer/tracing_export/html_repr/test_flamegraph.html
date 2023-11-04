@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.css">
+<link rel="stylesheet" type="text/css" href="flame_chart_style.css"/>
+<script src="jsonview.js"></script>
+<script type="text/javascript" src="https://d3js.org/d3.v7.js"></script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph.min.js"></script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/d3-flame-graph@4.1.3/dist/d3-flamegraph-tooltip.js"></script>
+<script src="flame_chart_view.js"></script>
+</head>
+
+<body>
+
+<script type="text/javascript">
+    const data_json = {
+        "name": "Root Node",
+        "value": 4,
+        "data": {
+            "name": "test root node"
+        },
+        "children": [
+            {
+                "name": "Node A",
+                "value": 1,
+                "data": {
+                    "name": "test node a"
+                },
+                "children": []
+            },
+            {
+                "name": "Node B",
+                "value": 2,
+                "data": {
+                    "name": "test node b"
+                },
+                "children": [
+                    {
+                        "name": "Node C",
+                        "value": 1,
+                        "data": {
+                            "name": "test node c",
+                            "test_list": [1, 2, 3],
+                        },
+                        "children": []
+                    },
+                    {
+                        "name": "Node D",
+                        "value": 1.0,
+                        "data": {
+                            "name": "test node d",
+                            "test_list": ["a", "b"],
+                        },
+                        "children": []
+                    }
+                ]
+            },
+            {
+                "name": "Node E",
+                "value": 1,
+                "data": {
+                    "name": "test node e"
+                },
+                "children": [
+                    {
+                        "name": "Node F",
+                        "value": 1,
+                        "data": {
+                            "key1": "Test\n123\Test\nHey",
+                            "key2": "value2",
+
+                        },
+                        "children": []
+                    }
+                ]
+            }
+        ]
+    };
+</script>
+
+<h1 id="flamechart-title">Placeholder</h1>
+<div id="flamechart-container"></div>
+<div id="selected-node-container"></div>
+
+<script type="text/javascript">
+document.getElementById("flamechart-title").innerHTML = data_json.name;
+flame_chart = render_flame_chart(
+    data_obj=data_json,
+    parent_container_id="flamechart-container",
+    selected_node_container_id="selected-node-container",
+)
+</script>
+</body>
+</html>

@@ -13,6 +13,8 @@ Run formatting, linting, and unit tests:
 * Standardized code formatting: [`black`](https://black.readthedocs.io/en/stable/)
 * Static analysis / linting / style guide enforcement/ formatting: [`ruff`](https://beta.ruff.rs/)
 * Static type checking: [`mypy`](http://mypy-lang.org/)
+* Unit testing: [`pytest`](https://docs.pytest.org/)
+* Environment lock after all tests pass
 
 
 ###Git pre-commit hooks
