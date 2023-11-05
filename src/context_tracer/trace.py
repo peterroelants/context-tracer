@@ -3,7 +3,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from types import TracebackType
-from typing import Any, Optional, ParamSpec, Self, TypeVar, Union, overload
+from typing import Any, ParamSpec, Self, TypeVar, Union, overload
 
 from .constants import (
     EXCEPTION_KEY,
@@ -72,17 +72,17 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
     """
 
     # TODO: Add generic type for AbstractContextManager
-    _trace_ctx_mngr: Optional[AbstractContextManager] = None
+    _trace_ctx_mngr: AbstractContextManager | None = None
     data: dict[str, Any]
 
     # TODO: parameters to disable method input/output logging
-    def __init__(self, /, **kwargs):
+    def __init__(self, /, **data):
         """
         Create a new trace context.
 
         Only keyword arguments are allowed.
         """
-        self.data = kwargs
+        self.data = data
 
     def __call__(self, func: Callable[P, R]) -> Callable[P, R]:
         """Called when used as a decorator."""
@@ -94,7 +94,7 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
         @functools.wraps(func)
         def wrapped_func(*args: P.args, **kwargs: P.kwargs) -> R:
             # Call function in trace context
-            with self as span:
+            with self as span:  # Enter trace context
                 if span is not None:
                     # Log function info
                     function_info: dict = {
@@ -112,16 +112,17 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
 
         return wrapped_func
 
-    def __enter__(self: Self) -> Optional[TraceSpan]:
+    # TODO: Parent span as optional argument?
+    def __enter__(self: Self) -> TraceSpan | None:
         """
         Create a new span with the current one as parent (iff a current span exists).
         """
         parent_span = get_current_span()
         if parent_span is not None:
             # Create a new span from the current span
-            child = parent_span.new_child(**self.data)
+            child = parent_span.new_child(**self.data)  # New child span
             self._trace_ctx_mngr = trace_span_context(child)
-            return self._trace_ctx_mngr.__enter__()
+            return self._trace_ctx_mngr.__enter__()  # Enter span
         # If no span is found, no child can be created, and no tracing is performed.
         # Run in `Tracing` context to capture traces.
         return None

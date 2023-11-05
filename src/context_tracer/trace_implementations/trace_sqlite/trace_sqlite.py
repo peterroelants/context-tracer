@@ -22,23 +22,27 @@ class TraceSpanSqlite(TraceSpan, TraceTree):
     """
 
     tracing: "TracingSqlite"
-    id: int
+    _id: int
 
-    def __init__(self, tracing: "TracingSqlite", id: int) -> None:
+    def __init__(self, tracing: "TracingSqlite", db_id: int) -> None:
         self.tracing = tracing
-        self.id = id
+        self._id = db_id
         super().__init__()
+
+    @property
+    def id(self) -> bytes:
+        return str(self._id).encode()
 
     @property
     def name(self) -> str:
         with self.tracing.db_conn() as db_conn:
-            name = get_name(db_conn, self.id)
+            name = get_name(db_conn, self._id)
         return name
 
     @property
     def data(self) -> JSONDictType:
         with self.tracing.db_conn() as db_conn:
-            data_json = get_data(db_conn, self.id)
+            data_json = get_data(db_conn, self._id)
         data = json.loads(data_json)
         return data
 
@@ -59,35 +63,35 @@ class TraceSpanSqlite(TraceSpan, TraceTree):
                 data_json=data_json,
             )
         assert node_id is not None
-        return cls(tracing=tracing, id=node_id)
+        return cls(tracing=tracing, db_id=node_id)
 
     @property
     def parent(self: Self) -> Optional[Self]:
         with self.tracing.db_conn() as db_conn:
-            parent_id = get_parent_id(db_conn, self.id)
+            parent_id = get_parent_id(db_conn, self._id)
         if parent_id is None:
             return None
-        return self.__class__(tracing=self.tracing, id=parent_id)
+        return self.__class__(tracing=self.tracing, db_id=parent_id)
 
     @property
     def children(self: Self) -> list[Self]:
         with self.tracing.db_conn() as db_conn:
-            children_ids = get_children_ids(db_conn, self.id)
+            children_ids = get_children_ids(db_conn, self._id)
         return [
-            self.__class__(tracing=self.tracing, id=child_id)
+            self.__class__(tracing=self.tracing, db_id=child_id)
             for child_id in children_ids
         ]
 
     def new_child(self: Self, **data) -> Self:
         name = data.pop(NAME_KEY, "no-name")
-        return self.new(tracing=self.tracing, name=name, data=data, parent_id=self.id)
+        return self.new(tracing=self.tracing, name=name, data=data, parent_id=self._id)
 
     def update_data(self, **new_data) -> None:
         data = self.data
         data.update(new_data)
         data_json: str = json.dumps(data, cls=AnyEncoder)
         with self.tracing.db_conn() as db_conn:
-            update_row(db_conn, self.id, data_json)
+            update_row(db_conn, self._id, data_json)
 
     def __enter__(self: Self) -> Self:
         start_time = get_local_timestamp().isoformat(sep=" ", timespec="seconds")
@@ -120,7 +124,7 @@ class TracingSqlite(Tracing[TraceSpanSqlite, TraceSpanSqlite]):
         with self.db_conn() as db_conn:
             root_id = get_root_id(db_conn)
         if root_id is not None:
-            return TraceSpanSqlite(self, root_id)
+            return TraceSpanSqlite(self, db_id=root_id)
         return TraceSpanSqlite.new(
             tracing=self,
             name="root",

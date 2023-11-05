@@ -9,7 +9,6 @@ from typing import (
     Optional,
     Protocol,
     Self,
-    Type,
     TypeVar,
     runtime_checkable,
 )
@@ -38,6 +37,7 @@ class TraceError(Exception):
     pass
 
 
+# TODO: Rename to Span?
 @runtime_checkable
 class TraceSpan(Protocol):
     """
@@ -50,10 +50,16 @@ class TraceSpan(Protocol):
     """
 
     # TODO: Add an id property to uniquely identify a TraceSpan?
+    # TODO: Parent relationship?
+
+    @property
+    def id(self) -> bytes:
+        """Unique identifier of the node."""
+        ...
 
     @property
     def name(self) -> str:
-        """Name of the node."""
+        """Name of the node. Human readable identifier."""
         ...
 
     @property
@@ -109,6 +115,7 @@ class TraceTree(Protocol):
 
 
 # TODO: Move Tracing and TraceTree to a separate module? Maybe even have a subtype of TraceSpan to have data and name?
+# TODO: Rename to Tracer to be consistent with OpenTelemetry? https://opentelemetry.io/docs/concepts/signals/traces/#tracer-provider
 @runtime_checkable
 class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
     """
@@ -118,7 +125,7 @@ class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
     """
 
     # TODO: Add Generic type to `AbstractContextManager`?
-    _span_ctx_mngr: Optional[AbstractContextManager] = None
+    _span_ctx_mngr: AbstractContextManager | None = None
 
     @property
     @abstractmethod
@@ -158,6 +165,7 @@ def trace_span_context(span: TraceSpan) -> Iterator[TraceSpan]:
     """
     Run in the context of the given Span.
     """
+    # TODO: Use copy_context to copy the context?
     reset_token = _TRACE_SPAN_IN_CONTEXT.set(span)
     try:
         with span:  # Enter Span Context
@@ -166,7 +174,7 @@ def trace_span_context(span: TraceSpan) -> Iterator[TraceSpan]:
         _TRACE_SPAN_IN_CONTEXT.reset(reset_token)
 
 
-def get_current_span() -> Optional[TraceSpan]:
+def get_current_span() -> TraceSpan | None:
     return _TRACE_SPAN_IN_CONTEXT.get()
 
 
@@ -177,13 +185,13 @@ def get_current_span_safe() -> TraceSpan:
     Raises:
         Exception: If no trace is running.
     """
-    current_trace: Optional[TraceSpan] = get_current_span()
+    current_trace: TraceSpan | None = get_current_span()
     if current_trace is None:
         raise TraceError("No Span is running. Run in the context of a `Tracing`!")
     return current_trace
 
 
-def get_current_span_safe_typed(T: Type[TraceSpanType]) -> TraceSpanType:
+def get_current_span_safe_typed(T: type[TraceSpanType]) -> TraceSpanType:
     """
     Return the current trace context.
 

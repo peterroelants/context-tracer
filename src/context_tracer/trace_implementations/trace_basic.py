@@ -15,6 +15,7 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
     Implements both Span (parent relation) and TraceTree (children relation) interfaces.
     """
 
+    _id: bytes
     _name: str
     _data: dict[str, Any]
     _parent: Optional["TraceSpanInMemory"]
@@ -26,6 +27,7 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
         parent: Optional["TraceSpanInMemory"],
         data: Optional[dict] = None,
     ) -> None:
+        self._id = str(id(self)).encode()
         self._name = name
         self._data = data or dict()
         self._parent = parent
@@ -44,6 +46,10 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
 
     def update_data(self, **new_data) -> None:
         self.data.update(new_data)
+
+    @property
+    def id(self) -> bytes:
+        return self._id
 
     @property
     def name(self) -> str:
