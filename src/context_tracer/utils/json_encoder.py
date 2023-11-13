@@ -19,7 +19,7 @@ JSONType: TypeAlias = (
     None | str | int | float | bool | list["JSONType"] | dict[str, "JSONType"]
 )
 
-JSONDictType = dict[str, "JSONType"]
+JSONDictType = dict[str, JSONType]
 
 
 # JSON Encoder #####################################################
@@ -64,6 +64,8 @@ def make_serializable_base(obj: Any) -> JSONType:
         return serialize_namedtuple(obj)
     if dataclasses.is_dataclass(obj):
         return dataclasses.asdict(obj)
+    # TODO: Pydantic v2
+    # TODO: dict(obj)?
     for attr in ["dict", "as_dict", "to_dict", "tolist", "to_list", "as_list"]:
         if hasattr(obj, attr):
             result = getattr(obj, attr)

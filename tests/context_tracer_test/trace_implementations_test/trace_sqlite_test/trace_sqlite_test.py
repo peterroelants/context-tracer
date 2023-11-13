@@ -3,13 +3,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from context_tracer.trace import log_with_trace, trace
+from context_tracer.trace import get_current_span_safe, log_with_trace, trace
 from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
 from context_tracer.trace_implementations.trace_sqlite import (
     TraceSpanSqlite,
     TracingSqlite,
 )
-from context_tracer.trace_implementations.trace_sqlite.trace_sqlite import get_root_id
 
 
 @pytest.fixture
@@ -25,6 +24,7 @@ def test_trace_sqlite(tmp_db_path: Path) -> None:
         assert isinstance(tracing, Tracing)
         assert tracing.root_span is not None
         assert isinstance(tracing.root_span, TraceSpan)
+        assert isinstance(tracing.root_span, TraceSpanSqlite)
     assert tmp_db_path.exists()
     assert tracing.tree is not None
     assert isinstance(tracing.tree, TraceTree)
@@ -32,8 +32,7 @@ def test_trace_sqlite(tmp_db_path: Path) -> None:
 
 def test_trace_sqlite_no_span(tmp_db_path: Path) -> None:
     tracing = TracingSqlite(db_path=tmp_db_path)
-    with tracing.db_conn() as db_conn:
-        assert get_root_id(db_conn) is None
+    assert tracing.span_db.get_root_ids() == []
 
 
 def test_trace_sqlite_program(tmp_db_path: Path) -> None:
@@ -96,3 +95,22 @@ def test_trace_sqlite_program(tmp_db_path: Path) -> None:
         return False
 
     assert found_c(tree_root)
+
+
+def test_update_data(tmp_db_path: Path) -> None:
+    @trace(name="test")
+    def get_trace_update_data():
+        span = get_current_span_safe()
+        assert span.name == "test"
+        span.update_data(test_var="data_1", a_specific=1, common=dict(a=1, b=2))
+        span.update_data(test_var="data_2", b_specific=22, common=dict(b=20, c=30))
+
+    with TracingSqlite(db_path=tmp_db_path) as tracing:
+        get_trace_update_data()
+
+    test_span_id = tracing.span_db.get_span_ids_from_name(name="test")[0]
+    test_span = TraceSpanSqlite(span_db=tracing.span_db, span_id=test_span_id)
+    assert test_span.data["test_var"] == "data_2"
+    assert test_span.data["a_specific"] == 1
+    assert test_span.data["b_specific"] == 22
+    assert test_span.data["common"] == dict(a=1, b=20, c=30)

@@ -14,10 +14,10 @@ from context_tracer.trace_implementations.trace_basic import (
     TraceSpanInMemory,
 )
 from context_tracer.utils.concurrency import (
-    CtxProcess,
-    CtxProcessPoolExecutor,
-    CtxThread,
-    CtxThreadPoolExecutor,
+    TraceProcess,
+    TraceProcessPoolExecutor,
+    TraceThread,
+    TraceThreadPoolExecutor,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def test_CtxThread_context_propagation() -> None:
     with trace_span_context(span):
         assert get_current_span() is span
         # Fetch span in thread
-        thread = CtxThread(target=put_current_span_on_queue, args=(queue,))
+        thread = TraceThread(target=put_current_span_on_queue, args=(queue,))
         thread.start()
         thread.join()
         assert get_current_span() is span
@@ -88,7 +88,7 @@ def test_CtxProcess_context_propagation(mp_start_method: str) -> None:
     with trace_span_context(span):
         assert get_current_span() is span
         # Fetch span in thread
-        proc = CtxProcess(target=put_current_span_on_queue, args=(queue,))
+        proc = TraceProcess(target=put_current_span_on_queue, args=(queue,))
         proc.start()
         proc.join()
         assert get_current_span() is span
@@ -111,7 +111,7 @@ def test_CtxThreadPoolExecutor_context_propagation() -> None:
     with trace_span_context(span):
         assert get_current_span() is span
         # Fetch span in thread
-        with CtxThreadPoolExecutor(max_workers=1) as executor:
+        with TraceThreadPoolExecutor(max_workers=1) as executor:
             span_id, span_name = executor.submit(return_span_id_and_name).result()
         assert get_current_span() is span
 
@@ -131,7 +131,7 @@ def test_CtxProcessPoolExecutor_context_propagation() -> None:
     with trace_span_context(span):
         assert get_current_span() is span
         # Fetch span in thread
-        with CtxProcessPoolExecutor(max_workers=1) as executor:
+        with TraceProcessPoolExecutor(max_workers=1) as executor:
             span_id, span_name = executor.submit(return_span_id_and_name).result()
         assert get_current_span() is span
 

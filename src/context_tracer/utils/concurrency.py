@@ -11,43 +11,40 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-# TODO: Rename to TraceThread, TraceProcess, ?
-
-
-class CtxThread(Thread):
+class TraceThread(Thread):
     """
-    Thread with context propagation.
+    Thread with trace context propagation.
     """
 
     _parent_span: TraceSpan | None = None
 
-    def start(self):
+    def start(self) -> None:
         """
         Start thread with context propagation.
         """
         self._parent_span = get_current_span()
         super().start()
 
-    def run(self):
+    def run(self) -> None:
         """
         Run target with context propagation.
 
-        A new span is created for the process itself.
-
         This is called in the child process.
         """
+        if self._parent_span is None:
+            return super().run()
         with trace_span_context(self._parent_span):
             super().run()
 
 
-class CtxProcess(Process):
+class TraceProcess(Process):
     """
     Process with context propagation.
     """
 
     _parent_span: TraceSpan | None = None
 
-    def start(self):
+    def start(self) -> None:
         """
         Start process with context propagation.
 
@@ -56,24 +53,14 @@ class CtxProcess(Process):
         self._parent_span = get_current_span()
         super().start()
 
-    def run(self):
+    def run(self) -> None:
         """
         Run target with context propagation.
 
-        A new span is created for the process itself.
-
         This is called in the child process.
         """
-        # TODO
-        # with trace(name="Process"):
-        #     super().run()
-        # child_span = None
-        # if self._parent_span is not None:
-        #     target_name = get_func_name(self._target)
-        #     child_span = self._parent_span.new_child(
-        #         name=f"Process {target_name}",
-        #         target=target_name,
-        #     )
+        if self._parent_span is None:
+            return super().run()
         with trace_span_context(self._parent_span):
             super().run()
 
@@ -90,7 +77,7 @@ def run_in_span(
         return target(*args, **kwargs)
 
 
-class CtxThreadPoolExecutor(ThreadPoolExecutor):
+class TraceThreadPoolExecutor(ThreadPoolExecutor):
     """
     ThreadPoolExecutor with context propagation.
     """
@@ -110,7 +97,7 @@ class CtxThreadPoolExecutor(ThreadPoolExecutor):
         return super().submit(func, *args, **kwargs)
 
 
-class CtxProcessPoolExecutor(ProcessPoolExecutor):
+class TraceProcessPoolExecutor(ProcessPoolExecutor):
     """
     ThreadPoolExecutor with context propagation.
     """
@@ -125,24 +112,3 @@ class CtxProcessPoolExecutor(ProcessPoolExecutor):
         if parent_span is not None:
             fn = functools.partial(run_in_span, parent_span, fn)
         return super().submit(fn, *args, **kwargs)
-
-
-# class CtxProcessPoolExecutor(ProcessPoolExecutor):
-#     """
-#     ProcessPoolExecutor with context propagation.
-#     """
-
-#     _ctx: Context
-
-#     def __init__(self, *args, **kwargs):
-#         self._ctx = copy_context()
-#         super().__init__(*args, **kwargs)
-
-#     def submit(
-#         self, fn: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs
-#     ) -> Future[R]:
-#         """
-#         Submit target in context.
-#         """
-#         fn_with_ctx: Callable = functools.partial(self._ctx.run, fn)
-#         return super().submit(fn_with_ctx, *args, **kwargs)

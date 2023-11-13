@@ -12,18 +12,20 @@ repos:
       entry: "conda run --name fin_agent jupyter nbconvert --clear-output"
 # General cleanup hooks
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
     - id: check-added-large-files
     - id: check-shebang-scripts-are-executable
       exclude: Jenkinsfile
     - id: check-toml
+    - id: detect-aws-credentials
     - id: detect-private-key
     - id: end-of-file-fixer
     - id: fix-byte-order-marker
     - id: mixed-line-ending
     - id: trailing-whitespace
       exclude: ^logs/
+    - id: name-tests-test
 # Shellcheck .sh linter
 -   repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.7.2

@@ -47,6 +47,11 @@ class TraceWithServer(TraceSpan, TraceTree):
         self._children = []
         super().__init__()
 
+    # TODO: Use a better id
+    @property
+    def id(self) -> bytes:
+        return id(self).to_bytes(8, "big")
+
     def new_child(self, **data) -> "TraceWithServer":
         name = data.pop(NAME_KEY, "no-name")
         child = TraceWithServer(

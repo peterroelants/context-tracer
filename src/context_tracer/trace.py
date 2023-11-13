@@ -22,7 +22,7 @@ from .trace_context import (
     get_current_span_safe,
     trace_span_context,
 )
-from .utils.types import AbstractContextManager, DecoratorMeta
+from .utils.types import ContextManagerProtocol, DecoratorMeta
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
     """
 
     # TODO: Add generic type for AbstractContextManager
-    _trace_ctx_mngr: AbstractContextManager | None = None
+    _trace_ctx_mngr: ContextManagerProtocol | None = None
     data: dict[str, Any]
 
     # TODO: parameters to disable method input/output logging
@@ -161,6 +161,7 @@ def get_func_bound_args(func: Callable, *args, **kwargs) -> dict:
     return bound.arguments
 
 
+# TODO: Move to utils
 def get_func_name(func: Callable) -> str:
     """Get a name representing the function."""
     return getattr(func, "__name__", repr(func))

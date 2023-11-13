@@ -1,19 +1,20 @@
-import contextlib
 import json
-import logging
-import sqlite3
-from collections.abc import Iterator
+import uuid
+from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Optional, Self
+from typing import Any, Final, Self
 
-from context_tracer.constants import END_TIME_KEY, NAME_KEY, START_TIME_KEY
+from context_tracer.constants import NAME_KEY
 from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
 from context_tracer.utils.json_encoder import AnyEncoder, JSONDictType
-from context_tracer.utils.time_utils import get_local_timestamp
+
+from .span_db import SpanDataBase
+
+DEFAULT_SPAN_NAME: Final[str] = "no-name"
 
 
 # Span #####################################################
-class TraceSpanSqlite(TraceSpan, TraceTree):
+class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
     """
     TODO: Documentation
     Node in the trace tree.
@@ -21,98 +22,75 @@ class TraceSpanSqlite(TraceSpan, TraceTree):
     Note: The tree is build "backwards" from the leaves to the root. Nodes have references to their parent, but not to their children. The child is the latest context, while the parent is the previous context.
     """
 
-    tracing: "TracingSqlite"
-    _id: int
+    span_db: SpanDataBase
+    _span_id: bytes
 
-    def __init__(self, tracing: "TracingSqlite", db_id: int) -> None:
-        self.tracing = tracing
-        self._id = db_id
+    def __init__(self, span_db: SpanDataBase, span_id: bytes) -> None:
+        self.span_db = span_db
+        self._span_id = span_id
         super().__init__()
 
     @property
     def id(self) -> bytes:
-        return str(self._id).encode()
+        return self._span_id
 
     @property
     def name(self) -> str:
-        with self.tracing.db_conn() as db_conn:
-            name = get_name(db_conn, self._id)
-        return name
+        return self.span_db.get_name(span_id=self._span_id)
 
     @property
     def data(self) -> JSONDictType:
-        with self.tracing.db_conn() as db_conn:
-            data_json = get_data(db_conn, self._id)
-        data = json.loads(data_json)
-        return data
+        return json.loads(self.span_db.get_data_json(span_id=self._span_id))
+
+    @property
+    def parent(self: Self) -> Self | None:
+        parent_id = self.span_db.get_parent_id(span_id=self._span_id)
+        if parent_id is None:
+            return None
+        return self.__class__(span_db=self.span_db, span_id=parent_id)
+
+    @property
+    def children(self: Self) -> list[Self]:
+        children_ids = self.span_db.get_children_ids(span_id=self._span_id)
+        return [
+            self.__class__(span_db=self.span_db, span_id=child_id)
+            for child_id in children_ids
+        ]
 
     @classmethod
     def new(
         cls,
-        tracing: "TracingSqlite",
+        span_db: SpanDataBase,
         name: str,
-        data: dict,
-        parent_id: int | None,
+        data: dict[str, Any],
+        parent_id: bytes | None,
     ) -> Self:
         data_json: str = json.dumps(data, cls=AnyEncoder)
-        with tracing.db_conn() as db_conn:
-            node_id = create_row(
-                db_conn,
-                parent_id=parent_id,
-                name=name,
-                data_json=data_json,
-            )
-        assert node_id is not None
-        return cls(tracing=tracing, db_id=node_id)
-
-    @property
-    def parent(self: Self) -> Optional[Self]:
-        with self.tracing.db_conn() as db_conn:
-            parent_id = get_parent_id(db_conn, self._id)
-        if parent_id is None:
-            return None
-        return self.__class__(tracing=self.tracing, db_id=parent_id)
-
-    @property
-    def children(self: Self) -> list[Self]:
-        with self.tracing.db_conn() as db_conn:
-            children_ids = get_children_ids(db_conn, self._id)
-        return [
-            self.__class__(tracing=self.tracing, db_id=child_id)
-            for child_id in children_ids
-        ]
+        span_id = uuid.uuid1().bytes
+        span_db.insert(
+            span_id=span_id,
+            name=name,
+            data_json=data_json,
+            parent_id=parent_id,
+        )
+        return cls(span_db=span_db, span_id=span_id)
 
     def new_child(self: Self, **data) -> Self:
-        name = data.pop(NAME_KEY, "no-name")
-        return self.new(tracing=self.tracing, name=name, data=data, parent_id=self._id)
+        name = data.pop(NAME_KEY, DEFAULT_SPAN_NAME)
+        return self.new(
+            span_db=self.span_db, name=name, data=data, parent_id=self._span_id
+        )
 
     def update_data(self, **new_data) -> None:
-        data = self.data
-        data.update(new_data)
-        data_json: str = json.dumps(data, cls=AnyEncoder)
-        with self.tracing.db_conn() as db_conn:
-            update_row(db_conn, self._id, data_json)
-
-    def __enter__(self: Self) -> Self:
-        start_time = get_local_timestamp().isoformat(sep=" ", timespec="seconds")
-        self.update_data(**{START_TIME_KEY: start_time})
-        return self
-
-    def __exit__(self, *exc) -> None:
-        end_time = get_local_timestamp().isoformat(sep=" ", timespec="seconds")
-        self.update_data(**{END_TIME_KEY: end_time})
-        return None
+        data_json: str = json.dumps(new_data, cls=AnyEncoder)
+        self.span_db.update_data_json(span_id=self._span_id, data_json=data_json)
 
 
 class TracingSqlite(Tracing[TraceSpanSqlite, TraceSpanSqlite]):
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        init_db(self.db_path)
+    span_db: SpanDataBase
 
-    @contextlib.contextmanager
-    def db_conn(self) -> Iterator[sqlite3.Connection]:
-        with connect_db(self.db_path) as db_conn:
-            yield db_conn
+    def __init__(self, db_path: Path):
+        self.span_db = SpanDataBase(db_path=db_path)
 
     @property
     def root_span(self) -> TraceSpanSqlite:
@@ -121,127 +99,20 @@ class TracingSqlite(Tracing[TraceSpanSqlite, TraceSpanSqlite]):
     @property
     def _table_root(self) -> TraceSpanSqlite:
         """Get the root node from the database or create a new one if it does not exist."""
-        with self.db_conn() as db_conn:
-            root_id = get_root_id(db_conn)
-        if root_id is not None:
-            return TraceSpanSqlite(self, db_id=root_id)
-        return TraceSpanSqlite.new(
-            tracing=self,
-            name="root",
-            data={},
-            parent_id=None,
-        )
+        root_ids = self.span_db.get_root_ids()
+        if len(root_ids) == 1:
+            return TraceSpanSqlite(span_db=self.span_db, span_id=root_ids[0])
+        elif len(root_ids) == 0:
+            return TraceSpanSqlite.new(
+                span_db=self.span_db,
+                name="root",
+                data={},
+                parent_id=None,
+            )
+        else:  # len(root_spans) > 1
+            raise ValueError(f"No singular node found: {root_ids=!r}!")
 
     @property
     def tree(self) -> TraceSpanSqlite:
         """Return a representable version of the root of the trace tree."""
         return self.root_span
-
-
-# SQL ##############################################################
-TABLE_NAME = "trace_spans"
-
-
-@contextlib.contextmanager
-def connect_db(db_path: Path) -> Iterator[sqlite3.Connection]:
-    sqlite_db_path = str(db_path.resolve())
-    logging.info(f"Using database path {sqlite_db_path=}.")
-    with sqlite3.connect(sqlite_db_path) as conn:
-        yield conn
-
-
-def init_db(db_path: Path) -> None:
-    """Initialize the database."""
-    CREATE_TABLE_SQL = (
-        f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} ("
-        "id INTEGER PRIMARY KEY"
-        ", parent_id INTEGER"
-        ", name TEXT NOT NULL"
-        ", data_json TEXT NOT NULL);"
-    )
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    logging.info("Initializing database...")
-    with connect_db(db_path) as db_conn:
-        cursor = db_conn.cursor()
-        cursor.execute(CREATE_TABLE_SQL)
-        db_conn.commit()
-    logging.info(f"Database initialized {db_conn=}.")
-
-
-def create_row(
-    db_conn: sqlite3.Connection,
-    parent_id: int | None,
-    name: str,
-    data_json: str,
-) -> int:
-    """Create a new row in the database table and return its id."""
-    INSERT_ROW_SQL = (
-        f"INSERT INTO {TABLE_NAME} (parent_id, name, data_json) VALUES (?, ?, ?);"
-    )
-    cursor = db_conn.cursor()
-    cursor.execute(INSERT_ROW_SQL, (parent_id, name, data_json))
-    db_conn.commit()
-    row_id = cursor.lastrowid
-    assert row_id is not None
-    return row_id
-
-
-def get_root_id(db_conn: sqlite3.Connection) -> int | None:
-    """Get the id of the root row in the database table."""
-    GET_ROOT_ID_SQL = f"SELECT id FROM {TABLE_NAME} WHERE parent_id IS NULL;"
-    cursor = db_conn.cursor()
-    cursor.execute(GET_ROOT_ID_SQL)
-    root_ids = list(cursor.fetchall())
-    if len(root_ids) > 1:
-        raise ValueError(f"Expected at most one root node, got {root_ids=}.")
-    if len(root_ids) == 0:
-        return None
-    root_id = root_ids[0][0]
-    assert root_id is not None
-    return root_id
-
-
-def get_name(db_conn: sqlite3.Connection, row_id: int) -> str:
-    """Get the name of a row in the database table."""
-    GET_NAME_SQL = f"SELECT name FROM {TABLE_NAME} WHERE id = ?;"
-    cursor = db_conn.cursor()
-    cursor.execute(GET_NAME_SQL, (row_id,))
-    name = cursor.fetchone()[0]
-    assert name is not None
-    return name
-
-
-def get_data(db_conn: sqlite3.Connection, row_id: int) -> str:
-    """Get the data of a row in the database table."""
-    GET_DATA_SQL = f"SELECT data_json FROM {TABLE_NAME} WHERE id = ?;"
-    cursor = db_conn.cursor()
-    cursor.execute(GET_DATA_SQL, (row_id,))
-    data_json = cursor.fetchone()[0]
-    assert data_json is not None
-    return data_json
-
-
-def get_parent_id(db_conn: sqlite3.Connection, row_id: int) -> int | None:
-    """Get the parent_id of a row in the database table."""
-    GET_PARENT_ID_SQL = f"SELECT parent_id FROM {TABLE_NAME} WHERE id = ?;"
-    cursor = db_conn.cursor()
-    cursor.execute(GET_PARENT_ID_SQL, (row_id,))
-    parent_id = cursor.fetchone()[0]
-    return parent_id
-
-
-def get_children_ids(db_conn: sqlite3.Connection, row_id: int) -> list[int]:
-    """Get the children_ids of a row in the database table."""
-    GET_CHILDREN_IDS_SQL = f"SELECT id FROM {TABLE_NAME} WHERE parent_id = ?;"
-    cursor = db_conn.cursor()
-    cursor.execute(GET_CHILDREN_IDS_SQL, (row_id,))
-    children_ids = [row[0] for row in cursor.fetchall()]
-    return children_ids
-
-
-def update_row(db_conn: sqlite3.Connection, row_id: int, data_json: str) -> None:
-    """Update the data of a row in the database table."""
-    UPDATE_ROW_SQL = f"UPDATE {TABLE_NAME} SET data_json = ? WHERE id = ?;"
-    cursor = db_conn.cursor()
-    cursor.execute(UPDATE_ROW_SQL, (data_json, row_id))
-    db_conn.commit()

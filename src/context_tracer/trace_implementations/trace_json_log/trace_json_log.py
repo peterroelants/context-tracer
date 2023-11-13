@@ -16,6 +16,8 @@ from .utils import get_uuid
 logger = logging.getLogger(__name__)
 
 
+# TODO: Remove?
+# TODO: Use process safe locks for writing files: https://github.com/harlowja/fasteners
 @dataclass
 class TraceSpanJsonLog:  # TraceSpan
     trace: "TracingJsonLog"
@@ -23,7 +25,7 @@ class TraceSpanJsonLog:  # TraceSpan
     parent: Optional["TraceSpanJsonLog"] = None
     data: dict = field(default_factory=dict)
     # ID is needed to reconstruct the tree
-    id: str = field(default_factory=get_uuid)
+    id: bytes = field(default_factory=get_uuid)
 
     def new_child(self, **data) -> "TraceSpanJsonLog":
         name = data.pop(NAME_KEY, "no-name")
@@ -36,14 +38,15 @@ class TraceSpanJsonLog:  # TraceSpan
 
     def update_data(self, **new_data) -> None:
         """Add data to the current node."""
+        # TODO: Recursive update?
         self.data.update({k: v for k, v in new_data.items()})
 
     def json(self) -> str:
         return json.dumps(
             dict(
-                id=self.id,
+                id=self.id.hex(),
                 name=self.name,
-                parent_id=self.parent.id if self.parent else None,
+                parent_id=self.parent.id.hex() if self.parent else None,
                 data=self.data,
             ),
             cls=AnyEncoder,
@@ -61,12 +64,13 @@ class TraceSpanJsonLog:  # TraceSpan
             self.data[END_TIME_KEY] = get_local_timestamp().isoformat(
                 sep=" ", timespec="seconds"
             )
+        # TODO: remove logger and write to file directly
         self.trace.logger.info(self.json())
         return None
 
 
 class TracingJsonLog(Tracing[TraceSpanJsonLog, TraceTreeJsonLog]):
-    root_id: str
+    root_id: bytes
     logger: logging.Logger
     logging_path: Path
     _root_context: TraceSpanJsonLog
@@ -80,7 +84,7 @@ class TracingJsonLog(Tracing[TraceSpanJsonLog, TraceTreeJsonLog]):
         self.root_id = get_uuid()
         logging_path = prepare_logging_path(logging_path)
         self.logging_path = logging_path
-        self.logger = logging.getLogger(self.root_id)
+        self.logger = logging.getLogger(self.root_id.hex())
         self.logger.propagate = propagate_log
         log_handlers: list[logging.Handler] = (
             [logging.FileHandler(logging_path)] if logging_path else []
@@ -108,7 +112,7 @@ class TracingJsonLog(Tracing[TraceSpanJsonLog, TraceTreeJsonLog]):
         return parse_logged_tree(self.logging_path)
 
     def __enter__(self) -> "TracingJsonLog":
-        logger.info(f"Trace started with root_id={self.root_id}.")
+        logger.info(f"Trace started with root_id={self.root_id.hex()}.")
         return super().__enter__()
 
 

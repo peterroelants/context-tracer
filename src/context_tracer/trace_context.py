@@ -13,7 +13,7 @@ from typing import (
     runtime_checkable,
 )
 
-from .utils.types import AbstractContextManager
+from .utils.types import ContextManagerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,9 @@ class TraceError(Exception):
     pass
 
 
+# TODO: SpanData Type?
+
+
 # TODO: Rename to Span?
 @runtime_checkable
 class TraceSpan(Protocol):
@@ -49,7 +52,6 @@ class TraceSpan(Protocol):
     NOTE: This is a protocol, not an abstract class. This means that it can be implemented by any class, not just subclasses of TraceSpan. We want to avoid any implementations here.
     """
 
-    # TODO: Add an id property to uniquely identify a TraceSpan?
     # TODO: Parent relationship?
 
     @property
@@ -57,6 +59,7 @@ class TraceSpan(Protocol):
         """Unique identifier of the node."""
         ...
 
+    # TODO: Name needed now that we have id?
     @property
     def name(self) -> str:
         """Name of the node. Human readable identifier."""
@@ -72,6 +75,7 @@ class TraceSpan(Protocol):
         """Create a new child node with self as parent."""
         ...
 
+    # TODO: Is update_data really needed? Can we just write everything out at the end?
     @abstractmethod
     def update_data(self, **kwargs) -> None:
         """Add data to the current node."""
@@ -125,7 +129,7 @@ class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
     """
 
     # TODO: Add Generic type to `AbstractContextManager`?
-    _span_ctx_mngr: AbstractContextManager | None = None
+    _span_ctx_mngr: ContextManagerProtocol | None = None
 
     @property
     @abstractmethod

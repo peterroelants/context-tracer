@@ -27,6 +27,7 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
         parent: Optional["TraceSpanInMemory"],
         data: Optional[dict] = None,
     ) -> None:
+        # TODO: Name in data?
         self._id = str(id(self)).encode()
         self._name = name
         self._data = data or dict()
@@ -45,7 +46,8 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
         return child
 
     def update_data(self, **new_data) -> None:
-        self.data.update(new_data)
+        # TODO: Recursive update?
+        self._data.update(new_data)
 
     @property
     def id(self) -> bytes:
@@ -67,6 +69,7 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
     def children(self) -> list["TraceSpanInMemory"]:
         return self._children
 
+    # TODO: Move timing to `trace` implementation
     def __enter__(self) -> "TraceSpanInMemory":
         start_time = get_local_timestamp().isoformat(sep=" ", timespec="seconds")
         self.update_data(**{START_TIME_KEY: start_time})

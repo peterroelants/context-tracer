@@ -20,7 +20,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 @runtime_checkable
-class AbstractContextManager(Protocol[_T_co]):
+class ContextManagerProtocol(Protocol[_T_co]):
     """
     From https://github.com/python/typeshed/blob/1459adc/stdlib/contextlib.pyi#L40-L46
     """
