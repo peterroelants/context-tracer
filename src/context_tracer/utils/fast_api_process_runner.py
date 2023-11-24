@@ -1,6 +1,9 @@
 import logging
 import multiprocessing as mp
 import socket
+from abc import abstractmethod
+from types import TracebackType
+from typing import Protocol, Self, runtime_checkable
 
 import uvicorn
 from fastapi import FastAPI
@@ -8,11 +11,36 @@ from fastapi import FastAPI
 log = logging.getLogger(__name__)
 
 
-class FastAPIProcessRunner:
+@runtime_checkable
+class ServerContextProtocol(Protocol):
+    """
+    A Server is a process that runs a webserver during the context manager's lifetime.
+    """
+
+    @property
+    def url(self) -> str | None:
+        """Return the URL of the server if it's running, else return None."""
+        ...
+
+    def __enter__(self: Self) -> Self:
+        ...
+
+    @abstractmethod
+    def __exit__(
+        self,
+        __exc_type: type[BaseException] | None,
+        __exc_value: BaseException | None,
+        __traceback: TracebackType | None,
+    ) -> bool | None:
+        ...
+
+
+class FastAPIProcessRunner(ServerContextProtocol):
     """
     Server to run a FastAPI application in a separate process.
 
-    Set `port=0` to let the OS assign a free port (Ephemeral port).
+    - Use as context manager to start and stop the server.
+    - Set `port=0` to let the OS assign a free port (Ephemeral port).
     """
 
     host: str
@@ -94,9 +122,9 @@ class FastAPIProcessRunner:
                 self._socket = None  # Delete socket to avoid reusing it
         log.info("Webserver finished")
 
-    def __enter__(self) -> "FastAPIProcessRunner":
+    def __enter__(self: Self) -> Self:
         self.start()
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *args, **kwargs) -> None:
         self.stop()

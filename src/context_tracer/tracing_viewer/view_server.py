@@ -117,8 +117,8 @@ class ViewServer:
 
     async def websocket_endpoint(self, websocket: WebSocket):
         """
-        Websocket endpoint to send data to client.
-        Listen for data on queue, send to client.
+        Websocket endpoint to send data to web client for viewing.
+        Listen for data on queue, send to web client.
         """
         log.debug("Setup websocket")
         await websocket.accept()

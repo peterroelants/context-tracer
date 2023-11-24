@@ -36,22 +36,22 @@ class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
 
     @property
     def name(self) -> str:
-        return self.span_db.get_name(span_id=self._span_id)
+        return self.span_db.get_name(id=self._span_id)
 
     @property
     def data(self) -> JSONDictType:
-        return json.loads(self.span_db.get_data_json(span_id=self._span_id))
+        return json.loads(self.span_db.get_data_json(id=self._span_id))
 
     @property
     def parent(self: Self) -> Self | None:
-        parent_id = self.span_db.get_parent_id(span_id=self._span_id)
+        parent_id = self.span_db.get_parent_id(id=self._span_id)
         if parent_id is None:
             return None
         return self.__class__(span_db=self.span_db, span_id=parent_id)
 
     @property
     def children(self: Self) -> list[Self]:
-        children_ids = self.span_db.get_children_ids(span_id=self._span_id)
+        children_ids = self.span_db.get_children_ids(id=self._span_id)
         return [
             self.__class__(span_db=self.span_db, span_id=child_id)
             for child_id in children_ids
@@ -68,7 +68,7 @@ class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
         data_json: str = json.dumps(data, cls=AnyEncoder)
         span_id = uuid.uuid1().bytes
         span_db.insert(
-            span_id=span_id,
+            id=span_id,
             name=name,
             data_json=data_json,
             parent_id=parent_id,
@@ -83,7 +83,7 @@ class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
 
     def update_data(self, **new_data) -> None:
         data_json: str = json.dumps(new_data, cls=AnyEncoder)
-        self.span_db.update_data_json(span_id=self._span_id, data_json=data_json)
+        self.span_db.update_data_json(id=self._span_id, data_json=data_json)
 
 
 class TracingSqlite(Tracing[TraceSpanSqlite, TraceSpanSqlite]):

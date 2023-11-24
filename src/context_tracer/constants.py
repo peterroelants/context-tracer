@@ -1,7 +1,10 @@
+from typing import Final, Literal
+
 # Common keys
 START_TIME_KEY = "start_time"
 END_TIME_KEY = "end_time"
-NAME_KEY = "name"
+NAME_KEY: Final[Literal["name"]] = "name"
+DATA_KEY: Final[Literal["data"]] = "data"
 
 # Function decorator keys
 FUNCTION_DECORATOR_KEY = "trace_function"

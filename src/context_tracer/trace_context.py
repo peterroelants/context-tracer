@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 TraceSpanType = TypeVar("TraceSpanType", bound="TraceSpan")
+# TODO: `_cov` suffix to `_return` for covariant types?
 TraceSpanType_cov = TypeVar("TraceSpanType_cov", bound="TraceSpan", covariant=True)
 TraceTreeType_cov = TypeVar("TraceTreeType_cov", bound="TraceTree", covariant=True)
 
@@ -54,17 +55,21 @@ class TraceSpan(Protocol):
 
     # TODO: Parent relationship?
 
+    # TODO: ID as str? Bytes cannot be used in JSON
+    # TODO: Rename to uid? https://en.wikipedia.org/wiki/Unique_identifier
     @property
     def id(self) -> bytes:
         """Unique identifier of the node."""
         ...
 
     # TODO: Name needed now that we have id?
+    # TODO: Name could be something ony for the tree, not the span?
     @property
     def name(self) -> str:
         """Name of the node. Human readable identifier."""
         ...
 
+    # TODO: Does data needs to be accessible? Tree is used to access eventually
     @property
     def data(self) -> dict[str, Any]:
         """Data of the node."""

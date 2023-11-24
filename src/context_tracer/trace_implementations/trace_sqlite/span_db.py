@@ -14,7 +14,7 @@ from context_tracer.utils.json_encoder import JSONDictType
 class SpanDbRow(BaseModel):
     """Representation of a row in the database table."""
 
-    span_id: bytes
+    id: bytes  # TODO: `id` to be closer to `TraceSpan`?
     name: str
     data_json: str
     parent_id: bytes | None
@@ -24,7 +24,7 @@ class SpanDbRow(BaseModel):
         return json.loads(self.data_json)
 
     def __hash__(self) -> int:
-        return self.span_id.__hash__()
+        return self.id.__hash__()
 
 
 # SQL ##############################################################
@@ -73,7 +73,7 @@ class SpanDataBase:
 
     def insert(
         self,
-        span_id: bytes,
+        id: bytes,
         name: str,
         data_json: str,
         parent_id: bytes | None,
@@ -88,13 +88,13 @@ class SpanDataBase:
             cursor = db_conn.cursor()
             cursor.execute(
                 INSERT_ROW_SQL,
-                (span_id, parent_id, name, data_json),
+                (id, parent_id, name, data_json),
             )
             db_conn.commit()
 
     def insert_or_update(
         self,
-        span_id: bytes,
+        id: bytes,
         name: str,
         data_json: str,
         parent_id: bytes | None,
@@ -116,10 +116,10 @@ class SpanDataBase:
             cursor = db_conn.cursor()
             cursor.execute(
                 UPDATE_ROW_SQL,
-                (span_id, parent_id, name, data_json),
+                (id, parent_id, name, data_json),
             )
 
-    def get_span(self, span_id: bytes) -> SpanDbRow:
+    def get_span(self, id: bytes) -> SpanDbRow:
         """Get the span corresponding to the given id."""
         GET_SPAN_SQL = f"""
             SELECT {ID_KEY}, {PARENT_ID_KEY}, {NAME_KEY}, {DATA_KEY}
@@ -127,11 +127,11 @@ class SpanDataBase:
         """
         with self.connect_db() as db_conn:
             cursor = db_conn.cursor()
-            cursor.execute(GET_SPAN_SQL, (span_id,))
+            cursor.execute(GET_SPAN_SQL, (id,))
             row = cursor.fetchone()
             assert row is not None
             span = SpanDbRow(
-                span_id=row[0],
+                id=row[0],
                 parent_id=row[1],
                 name=row[2],
                 data_json=row[3],
@@ -165,7 +165,7 @@ class SpanDataBase:
             print(f"{root_vars=}")
             return [
                 SpanDbRow(
-                    span_id=row[0],
+                    id=row[0],
                     name=row[1],
                     parent_id=row[2],
                     data_json=row[3],
@@ -173,18 +173,18 @@ class SpanDataBase:
                 for row in root_vars
             ]
 
-    def get_children_ids(self, span_id: bytes) -> list[bytes]:
+    def get_children_ids(self, id: bytes) -> list[bytes]:
         """Get the children_ids of a row in the database table."""
         GET_CHILDREN_IDS_SQL = f"SELECT id FROM {TABLE_NAME} WHERE {PARENT_ID_KEY} = ?;"
         with self.connect_db() as db_conn:
             cursor = db_conn.cursor()
-            cursor.execute(GET_CHILDREN_IDS_SQL, (span_id,))
+            cursor.execute(GET_CHILDREN_IDS_SQL, (id,))
             children_ids = [row[0] for row in cursor.fetchall()]
             return children_ids
 
     # TODO: Update json_data using sqlite json functions
     # https://dadroit.com/blog/json-querying/
-    def update_data_json(self, span_id: bytes, data_json: str) -> None:
+    def update_data_json(self, id: bytes, data_json: str) -> None:
         """
         Update the data of a row in the database table.
 
@@ -200,37 +200,37 @@ class SpanDataBase:
         """
         with self.connect_db() as db_conn:
             cursor = db_conn.cursor()
-            cursor.execute(UPDATE_DATA_JSON_SQL, (data_json, span_id))
+            cursor.execute(UPDATE_DATA_JSON_SQL, (data_json, id))
             db_conn.commit()
 
-    def get_data_json(self, span_id: bytes) -> str:
+    def get_data_json(self, id: bytes) -> str:
         """Get the data of a row in the database table."""
         GET_DATA_SQL = f"SELECT {DATA_KEY} FROM {TABLE_NAME} WHERE {ID_KEY} = ?;"
         with self.connect_db() as db_conn:
             cursor = db_conn.cursor()
-            cursor.execute(GET_DATA_SQL, (span_id,))
+            cursor.execute(GET_DATA_SQL, (id,))
             data_json = cursor.fetchone()[0]
             assert data_json is not None
             return data_json
 
-    def get_name(self, span_id: bytes) -> str:
+    def get_name(self, id: bytes) -> str:
         """Get the name of a row in the database table."""
         GET_NAME_SQL = f"SELECT {NAME_KEY} FROM {TABLE_NAME} WHERE {ID_KEY} = ?;"
         with self.connect_db() as db_conn:
             cursor = db_conn.cursor()
-            cursor.execute(GET_NAME_SQL, (span_id,))
+            cursor.execute(GET_NAME_SQL, (id,))
             name = cursor.fetchone()[0]
             assert name is not None
             return name
 
-    def get_parent_id(self, span_id: bytes) -> bytes | None:
+    def get_parent_id(self, id: bytes) -> bytes | None:
         """Get the parent_id of a row in the database table."""
         GET_PARENT_ID_SQL = (
             f"SELECT {PARENT_ID_KEY} FROM {TABLE_NAME} WHERE {ID_KEY} = ?;"
         )
         with self.connect_db() as db_conn:
             cursor = db_conn.cursor()
-            cursor.execute(GET_PARENT_ID_SQL, (span_id,))
+            cursor.execute(GET_PARENT_ID_SQL, (id,))
             parent_id = cursor.fetchone()[0]
             return parent_id
 
