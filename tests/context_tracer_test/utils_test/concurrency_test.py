@@ -1,6 +1,8 @@
+import contextlib
 import logging
 import multiprocessing as mp
 import uuid
+from collections.abc import Iterator
 from queue import Queue
 
 import pytest
@@ -43,6 +45,16 @@ def return_span_id_and_name() -> tuple[bytes, str]:
     return span.id, span.name
 
 
+@contextlib.contextmanager
+def multiprocess_start_method(start_method: str) -> Iterator[None]:
+    prev_start_method = mp.get_start_method()
+    mp.set_start_method(start_method, force=True)
+    try:
+        yield
+    finally:
+        mp.set_start_method(prev_start_method, force=True)
+
+
 # Test Context Propagation #########################################
 def test_CtxThread_context_propagation() -> None:
     queue: Queue[TraceSpan] = Queue()
@@ -75,29 +87,30 @@ def test_CtxThread_context_propagation() -> None:
     ["spawn", "fork"],
 )
 def test_CtxProcess_context_propagation(mp_start_method: str) -> None:
-    mp.set_start_method(mp_start_method, force=True)
-    ctx = mp.get_context()
-    queue: mp.Queue[TraceSpan] = ctx.Queue()
-    span_name = f"Span_{str(uuid.uuid4())}"
-    span = TraceSpanInMemory(
-        name=span_name,
-        parent=None,
-        data=None,
-    )
-    assert get_current_span() is None
-    with trace_span_context(span):
-        assert get_current_span() is span
-        # Fetch span in thread
-        proc = TraceProcess(target=put_current_span_on_queue, args=(queue,))
-        proc.start()
-        proc.join()
-        assert get_current_span() is span
+    with multiprocess_start_method(mp_start_method):
+        ctx = mp.get_context()
+        assert ctx.get_start_method() == mp_start_method
+        queue: mp.Queue[TraceSpan] = ctx.Queue()
+        span_name = f"Span_{str(uuid.uuid4())}"
+        span = TraceSpanInMemory(
+            name=span_name,
+            parent=None,
+            data=None,
+        )
+        assert get_current_span() is None
+        with trace_span_context(span):
+            assert get_current_span() is span
+            # Fetch span in thread
+            proc = TraceProcess(target=put_current_span_on_queue, args=(queue,))
+            proc.start()
+            proc.join()
+            assert get_current_span() is span
 
-    # Check span in thread
-    proc_span = queue.get()
-    assert isinstance(proc_span, TraceSpan)
-    assert proc_span.name == span_name
-    assert proc_span.id == span.id
+        # Check span in thread
+        proc_span = queue.get()
+        assert isinstance(proc_span, TraceSpan)
+        assert proc_span.name == span_name
+        assert proc_span.id == span.id
 
 
 def test_CtxThreadPoolExecutor_context_propagation() -> None:

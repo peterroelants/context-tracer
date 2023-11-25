@@ -69,7 +69,7 @@ class SpanDataBase:
             cursor.execute(CREATE_TABLE_SQL)
             db_conn.commit()
         assert self.db_path.exists()
-        logging.info(f"Database initialized {db_conn=}.")
+        logging.info(f"Database initialized at {self.db_path!r}.")
 
     def insert(
         self,
