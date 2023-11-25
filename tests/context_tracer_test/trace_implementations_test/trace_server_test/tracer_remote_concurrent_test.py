@@ -4,6 +4,11 @@ import multiprocessing as mp
 from collections.abc import Iterator
 
 import pytest
+from context_tracer.concurrency import (
+    TraceProcess,
+    TraceProcessPoolExecutor,
+    TraceThread,
+)
 from context_tracer.trace import trace
 from context_tracer.trace_context import get_current_span_safe_typed
 from context_tracer.trace_implementations.trace_server.trace_server import (
@@ -13,11 +18,6 @@ from context_tracer.trace_implementations.trace_server.tracer_remote import (
     SpanTreeRemote,
     TraceSpanRemote,
     TracingRemote,
-)
-from context_tracer.utils.concurrency import (
-    TraceProcess,
-    TraceProcessPoolExecutor,
-    TraceThread,
 )
 
 

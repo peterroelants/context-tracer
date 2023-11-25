@@ -1,5 +1,8 @@
+import contextlib
 import functools
-from collections.abc import Callable
+import multiprocessing
+import threading
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 from multiprocessing import Process
 from threading import Thread
@@ -9,6 +12,41 @@ from context_tracer.trace_context import TraceSpan, get_current_span, trace_span
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+@contextlib.contextmanager
+def patch_concurrency() -> Iterator[None]:
+    """
+    Patch concurrency modules to use TraceThread, TraceProcess, TraceThreadPoolExecutor, and TraceProcessPoolExecutor.
+    """
+    with patch_threading(), patch_multiprocessing():
+        yield
+
+
+@contextlib.contextmanager
+def patch_threading() -> Iterator[None]:
+    """
+    Patch threading module to use TraceThread.
+    """
+    orig_thread = threading.Thread
+    try:
+        threading.Thread = TraceThread  # type: ignore
+        yield
+    finally:
+        threading.Thread = orig_thread  # type: ignore
+
+
+@contextlib.contextmanager
+def patch_multiprocessing() -> Iterator[None]:
+    """
+    Patch multiprocessing module to use TraceProcess.
+    """
+    orig_process = multiprocessing.Process
+    try:
+        multiprocessing.Process = TraceProcess  # type: ignore
+        yield
+    finally:
+        multiprocessing.Process = orig_process  # type: ignore
 
 
 class TraceThread(Thread):
@@ -33,8 +71,9 @@ class TraceThread(Thread):
         """
         if self._parent_span is None:
             return super().run()
-        with trace_span_context(self._parent_span):
-            super().run()
+        with patch_concurrency():
+            with trace_span_context(self._parent_span):
+                super().run()
 
 
 class TraceProcess(Process):
@@ -61,8 +100,9 @@ class TraceProcess(Process):
         """
         if self._parent_span is None:
             return super().run()
-        with trace_span_context(self._parent_span):
-            super().run()
+        with patch_concurrency():
+            with trace_span_context(self._parent_span):
+                super().run()
 
 
 def run_in_span(
@@ -71,10 +111,14 @@ def run_in_span(
     """
     Run target in span context.
 
+    Cannot be a function decorator because the embedded wrapper function would not be picklable for multiprocessing.
+    Needs to be applied via functools.partial.
+
     TODO: Move somewhere else?
     """
-    with trace_span_context(span):
-        return target(*args, **kwargs)
+    with patch_concurrency():
+        with trace_span_context(span):
+            return target(*args, **kwargs)
 
 
 class TraceThreadPoolExecutor(ThreadPoolExecutor):
@@ -89,12 +133,10 @@ class TraceThreadPoolExecutor(ThreadPoolExecutor):
         Submit target in context.
         """
         parent_span = get_current_span()
-        func: Callable[P, R]
         if parent_span is not None:
-            func = functools.partial(run_in_span, parent_span, fn)
-        else:
-            func = fn
-        return super().submit(func, *args, **kwargs)
+            fn = functools.partial(run_in_span, parent_span, fn)
+            # fn = run_in_span(func=fn, span=parent_span)
+        return super().submit(fn, *args, **kwargs)
 
 
 class TraceProcessPoolExecutor(ProcessPoolExecutor):
