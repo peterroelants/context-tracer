@@ -55,10 +55,8 @@ class TraceSpan(Protocol):
 
     # TODO: Parent relationship?
 
-    # TODO: ID as str? Bytes cannot be used in JSON
-    # TODO: Rename to uid? https://en.wikipedia.org/wiki/Unique_identifier
     @property
-    def id(self) -> bytes:
+    def uid(self) -> bytes:
         """Unique identifier of the node."""
         ...
 

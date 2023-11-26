@@ -49,7 +49,7 @@ class TraceWithServer(TraceSpan, TraceTree):
 
     # TODO: Use a better id
     @property
-    def id(self) -> bytes:
+    def uid(self) -> bytes:
         return id(self).to_bytes(8, "big")
 
     def new_child(self, **data) -> "TraceWithServer":

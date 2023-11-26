@@ -32,7 +32,7 @@ def test_trace_sqlite(tmp_db_path: Path) -> None:
 
 def test_trace_sqlite_no_span(tmp_db_path: Path) -> None:
     tracing = TracingSqlite(db_path=tmp_db_path)
-    assert tracing.span_db.get_root_ids() == []
+    assert tracing.span_db.get_root_uids() == []
 
 
 def test_trace_sqlite_program(tmp_db_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_update_data(tmp_db_path: Path) -> None:
         get_trace_update_data()
 
     test_span_id = tracing.span_db.get_span_ids_from_name(name="test")[0]
-    test_span = TraceSpanSqlite(span_db=tracing.span_db, span_id=test_span_id)
+    test_span = TraceSpanSqlite(span_db=tracing.span_db, span_uid=test_span_id)
     assert test_span.data["test_var"] == "data_2"
     assert test_span.data["a_specific"] == 1
     assert test_span.data["b_specific"] == 22

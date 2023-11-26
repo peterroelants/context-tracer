@@ -56,30 +56,59 @@ def make_serializable(obj: Any) -> JSONType:
 
 def make_serializable_base(obj: Any) -> JSONType:
     """Returns a serializable object for `obj`."""
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, int):
+        return obj
+    if isinstance(obj, float):
+        return obj
+    if isinstance(obj, complex):
+        return repr(obj)
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, bytes):
+        return serialize_bytes(obj)
     if isinstance(obj, datetime):
-        return obj.isoformat(sep=" ", timespec="seconds")
+        return obj.astimezone().isoformat(sep=" ")
     if isinstance(obj, timedelta):
         return format_timedelta(obj)
     if isnamedtuple(obj):
         return serialize_namedtuple(obj)
     if dataclasses.is_dataclass(obj):
         return dataclasses.asdict(obj)
-    # TODO: Pydantic v2
-    # TODO: dict(obj)?
-    for attr in ["dict", "as_dict", "to_dict", "tolist", "to_list", "as_list"]:
+    for attr in ["dict", "as_dict", "to_dict", "model_dump"]:
         if hasattr(obj, attr):
-            result = getattr(obj, attr)
-            if callable(result):
-                return result()
-            return result
-    for attr in ["json", "to_json", "as_json"]:
+            try:
+                result = getattr(obj, attr)
+                if callable(result):
+                    result = result()
+                assert isinstance(result, dict)
+                return make_serializable(result)
+            except Exception:
+                continue
+    for attr in ["tolist", "to_list", "as_list"]:
         if hasattr(obj, attr):
-            result = getattr(obj, attr)
-            if callable(result):
-                result = result()
-            if isinstance(result, str):
-                return json.loads(result)
-            return result
+            try:
+                result = getattr(obj, attr)
+                if callable(result):
+                    result = result()
+                assert isinstance(result, list)
+                return make_serializable(result)
+            except Exception:
+                continue
+    for attr in ["json", "to_json", "as_json", "model_dump_json"]:
+        if hasattr(obj, attr):
+            try:
+                result = getattr(obj, attr)
+                if callable(result):
+                    result = result()
+                if isinstance(result, str):
+                    result = json.loads(result)
+                    return make_serializable(result)
+            except Exception:
+                continue
     return repr(obj)
 
 
@@ -97,3 +126,10 @@ def isnamedtuple(obj: Any) -> bool:
 
 def serialize_namedtuple(val: NamedTuple) -> dict:
     return {k: v for k, v in val._asdict().items()}
+
+
+def serialize_bytes(val: bytes) -> str:
+    try:
+        return val.decode("utf-8")
+    except Exception:
+        return repr(val)

@@ -5,6 +5,7 @@ from io import StringIO
 from .time_utils import format_timedelta
 
 
+# TODO: Still needed?
 class NewLineStrPrettyPrinter(pprint.PrettyPrinter):
     """
     PrettyPrinter that prints strings with newlines as triple-quoted strings.

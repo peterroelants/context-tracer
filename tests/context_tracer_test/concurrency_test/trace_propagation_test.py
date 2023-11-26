@@ -57,7 +57,7 @@ def return_span_id_and_name() -> tuple[bytes, str]:
     Needs to be defined in global scope to be picklable for multiprocessing.
     """
     span = get_current_span_safe()
-    return span.id, span.name
+    return span.uid, span.name
 
 
 @trace
@@ -107,7 +107,7 @@ def test_CtxThread_context_propagation() -> None:
     assert queue.empty()
     assert isinstance(thread_span, TraceSpan)
     assert thread_span.name == span_name
-    assert thread_span.id == span.id
+    assert thread_span.uid == span.uid
     assert thread_span is span
 
 
@@ -132,7 +132,7 @@ def test_CtxThread_new_trace() -> None:
     assert isinstance(thread_span, TraceSpanInMemory)
     assert thread_span.name == put_span_on_queue.__name__
     assert thread_span.parent is not None
-    assert thread_span.parent.id == root_span.id
+    assert thread_span.parent.uid == root_span.uid
 
 
 @pytest.mark.parametrize(
@@ -161,7 +161,7 @@ def test_CtxProcess_context_propagation(mp_start_method: str) -> None:
         assert queue.empty()
         assert isinstance(proc_span, TraceSpan)
         assert proc_span.name == span_name
-        assert proc_span.id == span.id
+        assert proc_span.uid == span.uid
 
 
 @pytest.mark.parametrize(
@@ -191,7 +191,7 @@ def test_CtxProcess_new_trace(mp_start_method: str) -> None:
         assert isinstance(thread_span, TraceSpanInMemory)
         assert thread_span.name == put_span_on_queue.__name__
         assert thread_span.parent is not None
-        assert thread_span.parent.id == root_span.id
+        assert thread_span.parent.uid == root_span.uid
 
 
 @pytest.mark.parametrize(
@@ -238,7 +238,7 @@ def test_CtxThreadPoolExecutor_context_propagation() -> None:
             span_id, span_name = executor.submit(return_span_id_and_name).result()
         assert get_current_span() is span
     assert span_name == span_name
-    assert span_id == span.id
+    assert span_id == span.uid
 
 
 def test_CtxProcessPoolExecutor_context_propagation() -> None:
@@ -255,4 +255,4 @@ def test_CtxProcessPoolExecutor_context_propagation() -> None:
             span_id, span_name = executor.submit(return_span_id_and_name).result()
         assert get_current_span() is span
     assert span_name == span_name
-    assert span_id == span.id
+    assert span_id == span.uid

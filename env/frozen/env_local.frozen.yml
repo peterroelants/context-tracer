@@ -202,4 +202,5 @@ dependencies:
       - types-setuptools==68.2.0.0
       - types-six==1.16.21.9
       - types-ujson==5.8.0.1
+      - uuid6==2023.5.2
       - virtualenv==20.24.6

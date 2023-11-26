@@ -41,7 +41,7 @@ def remote_doubling_function(test_param: int):
     This function needs to be defined in global scope to be picklable for multiprocessing.
     """
     span = get_current_span_safe_typed(TraceSpanRemote)
-    span.update_data(id_md5=id_hash(span.id))
+    span.update_data(id_md5=id_hash(span.uid))
     return test_param * 2
 
 
@@ -57,7 +57,7 @@ def test_trace_thread(tmp_api_client: SpanClientAPI) -> None:
     assert len(root_children) == 1
     child = root_children[0]
     assert child.name == remote_doubling_function.__name__
-    assert child.data["id_md5"] == id_hash(child.id)
+    assert child.data["id_md5"] == id_hash(child.uid)
 
 
 @pytest.mark.parametrize(
@@ -77,7 +77,7 @@ def test_trace_process(tmp_api_client: SpanClientAPI, mp_start_method: str) -> N
         assert len(root_children) == 1
         child = root_children[0]
         assert child.name == remote_doubling_function.__name__
-        assert child.data["id_md5"] == id_hash(child.id)
+        assert child.data["id_md5"] == id_hash(child.uid)
 
 
 def test_trace_process_pool(tmp_api_client: SpanClientAPI) -> None:
@@ -93,4 +93,4 @@ def test_trace_process_pool(tmp_api_client: SpanClientAPI) -> None:
     assert len(root_children) == nb_children
     for child in root_children:
         assert child.name == remote_doubling_function.__name__
-        assert child.data["id_md5"] == id_hash(child.id)
+        assert child.data["id_md5"] == id_hash(child.uid)

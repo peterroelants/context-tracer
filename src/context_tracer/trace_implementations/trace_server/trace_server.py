@@ -1,4 +1,3 @@
-import base64
 import contextlib
 import json
 import logging
@@ -18,6 +17,7 @@ from context_tracer.trace_implementations.trace_sqlite.span_db import (
 from context_tracer.utils.fast_api_process_runner import (
     FastAPIProcessRunner,
 )
+from context_tracer.utils.id_utils import uid_to_bytes, uid_to_str
 from context_tracer.utils.json_encoder import AnyEncoder
 
 log = logging.getLogger(__name__)
@@ -25,8 +25,8 @@ log = logging.getLogger(__name__)
 
 # TODO: Proper HTTP endpoints all using ID in path
 READINESS_ENDPOINT: Final[str] = "/api/status/ready"
-SPAN_ENDPOINT: Final[str] = "/api/span/{span_id}"
-SPAN_CHILDREN_ENDPOINT: Final[str] = "/api/span/{span_id}/children"
+SPAN_ENDPOINT: Final[str] = "/api/span/{span_uid}"
+SPAN_CHILDREN_ENDPOINT: Final[str] = "/api/span/{span_uid}/children"
 ROOT_SPAN_IDS_ENDPOINT: Final[str] = "/api/tracing/root"
 
 
@@ -38,22 +38,22 @@ async def readiness() -> Response:
 # Types ############################################################
 class SpanDict(TypedDict):
     # TODO: More general?
-    id: bytes
+    uid: bytes
     name: str
     data: dict[str, Any]
-    parent_id: bytes | None
+    parent_uid: bytes | None
 
 
 class SpanPayloadBytesDict(TypedDict):
     name: str
     data_json: str
-    parent_id: bytes | None
+    parent_uid: bytes | None
 
 
 class SpanPayloadDict(TypedDict):
     name: str
     data_json: str
-    parent_id: str | None
+    parent_uid: str | None
 
 
 class SpanDataPayload(BaseModel):
@@ -64,59 +64,56 @@ class SpanPayload(SpanDataPayload):
     """Request posted to the trace server."""
 
     name: str
-    parent_id: str | None
+    parent_uid: str | None
 
     @property
-    def parent_id_bytes(self) -> bytes | None:
-        return self.maybe_id_to_bytes(self.parent_id)
+    def parent_uid_bytes(self) -> bytes | None:
+        return self.maybe_uid_to_bytes(self.parent_uid)
 
     @classmethod
     def from_bytes_ids(
         cls: type[Self],
         name: str,
         data_json: str,
-        parent_id: bytes | None,
+        parent_uid: bytes | None,
         **kwargs,
     ) -> Self:
-        parent_id_str = cls.maybe_id_to_str(parent_id)
+        parent_uid_str = cls.maybe_uid_to_str(parent_uid)
         return cls(
             name=name,
             data_json=data_json,
-            parent_id=parent_id_str,
+            parent_uid=parent_uid_str,
         )
 
     @staticmethod
-    def id_to_bytes(id: str) -> bytes:
-        padding = 4 - (len(id) % 4)
-        return base64.urlsafe_b64decode(id + ("=" * padding))
+    def uid_to_bytes(uid: str) -> bytes:
+        return uid_to_bytes(uid)
 
     @staticmethod
-    def maybe_id_to_bytes(id: str | None) -> bytes | None:
-        if id is None:
+    def maybe_uid_to_bytes(uid: str | None) -> bytes | None:
+        if uid is None:
             return None
-        return SpanPayload.id_to_bytes(id)
+        return SpanPayload.uid_to_bytes(uid)
 
     @staticmethod
-    def id_to_str(id: bytes) -> str:
-        return base64.urlsafe_b64encode(id).rstrip(b"=").decode("ascii")
+    def uid_to_str(id: bytes) -> str:
+        return uid_to_str(id)
 
     @staticmethod
-    def maybe_id_to_str(id: bytes | None) -> str | None:
-        if id is None:
+    def maybe_uid_to_str(uid: bytes | None) -> str | None:
+        if uid is None:
             return None
-        return SpanPayload.id_to_str(id)
+        return SpanPayload.uid_to_str(uid)
 
     def model_dump_byte_ids(self) -> SpanPayloadBytesDict:
         return {
             "name": self.name,
             "data_json": self.data_json,
-            "parent_id": self.parent_id_bytes,
+            "parent_uid": self.parent_uid_bytes,
         }
 
 
 # Client ###########################################################
-
-
 class SpanClientAPI:
     """Client API for Span server."""
 
@@ -144,56 +141,60 @@ class SpanClientAPI:
         resp = requests.get(f"{self.url}{READINESS_ENDPOINT}")
         return resp.status_code == HTTPStatus.OK
 
-    def get_span(self, id: bytes) -> SpanDict:
-        span_id = SpanPayload.id_to_str(id)
-        resp = requests.get(f"{self.url}{SPAN_ENDPOINT.format(span_id=span_id)}")
+    def get_span(self, uid: bytes) -> SpanDict:
+        span_uid = SpanPayload.uid_to_str(uid)
+        resp = requests.get(f"{self.url}{SPAN_ENDPOINT.format(span_uid=span_uid)}")
         resp.raise_for_status()
         resp_json: SpanPayloadDict = resp.json()
         span_dict: SpanDict = dict(
-            id=id,
+            uid=uid,
             name=resp_json["name"],
             data=json.loads(resp_json["data_json"]),
-            parent_id=SpanPayload.maybe_id_to_bytes(resp_json["parent_id"]),
+            parent_uid=SpanPayload.maybe_uid_to_bytes(resp_json["parent_uid"]),
         )
         return span_dict
 
     def put_new_span(
-        self, id: bytes, name: str, data: dict[str, Any], parent_id: bytes | None = None
+        self,
+        uid: bytes,
+        name: str,
+        data: dict[str, Any],
+        parent_uid: bytes | None = None,
     ) -> None:
         # TODO: Unpack type annotation: `**kwargs: Unpack[SpanDict]`
-        span_id: str = SpanPayload.id_to_str(id)
+        span_uid: str = SpanPayload.uid_to_str(uid)
         request_payload: SpanPayload = SpanPayload.from_bytes_ids(
             name=name,
             data_json=json.dumps(data, cls=AnyEncoder),
-            parent_id=parent_id,
+            parent_uid=parent_uid,
         )
         resp = requests.put(
-            f"{self.url}{SPAN_ENDPOINT.format(span_id=span_id)}",
+            f"{self.url}{SPAN_ENDPOINT.format(span_uid=span_uid)}",
             json=request_payload.model_dump(),
         )
         resp.raise_for_status()
 
-    def patch_update_span(self, id: bytes, data: dict[str, Any]) -> None:
-        span_id = SpanPayload.id_to_str(id)
+    def patch_update_span(self, uid: bytes, data: dict[str, Any]) -> None:
+        span_uid = SpanPayload.uid_to_str(uid)
         request_payload = SpanDataPayload(data_json=json.dumps(data, cls=AnyEncoder))
         resp = requests.patch(
-            f"{self.url}{SPAN_ENDPOINT.format(span_id=span_id)}",
+            f"{self.url}{SPAN_ENDPOINT.format(span_uid=span_uid)}",
             json=request_payload.model_dump(),
         )
         resp.raise_for_status()
 
-    def get_children_ids(self, id: bytes) -> list[bytes]:
-        span_id = SpanPayload.id_to_str(id)
+    def get_children_uids(self, uid: bytes) -> list[bytes]:
+        span_uid = SpanPayload.uid_to_str(uid)
         resp = requests.get(
-            f"{self.url}{SPAN_CHILDREN_ENDPOINT.format(span_id=span_id)}"
+            f"{self.url}{SPAN_CHILDREN_ENDPOINT.format(span_uid=span_uid)}"
         )
         resp.raise_for_status()
-        return [SpanPayload.id_to_bytes(child_id) for child_id in resp.json()]
+        return [SpanPayload.uid_to_bytes(child_uid) for child_uid in resp.json()]
 
     def get_root_span_ids(self) -> list[bytes]:
         resp = requests.get(f"{self.url}{ROOT_SPAN_IDS_ENDPOINT}")
         resp.raise_for_status()
-        return [SpanPayload.id_to_bytes(id) for id in resp.json()]
+        return [SpanPayload.uid_to_bytes(uid) for uid in resp.json()]
 
 
 # Server ###########################################################
@@ -208,33 +209,32 @@ class SpanServerAPI:
     def __init__(self, span_db: SpanDataBase) -> None:
         self.span_db = span_db
 
-    async def get_span(self, span_id: str) -> SpanPayload:
-        span = self.span_db.get_span(id=SpanPayload.id_to_bytes(span_id))
+    async def get_span(self, span_uid: str) -> SpanPayload:
+        span = self.span_db.get_span(uid=SpanPayload.uid_to_bytes(span_uid))
         span_response = SpanPayload.from_bytes_ids(**span.model_dump())
         return span_response
 
-    async def put_new_span(self, span_id: str, span: SpanPayload):
-        print(f"put_new_span({id=}, {span=})", flush=True)
+    async def put_new_span(self, span_uid: str, span: SpanPayload):
         self.span_db.insert(
-            id=SpanPayload.id_to_bytes(span_id), **span.model_dump_byte_ids()
+            uid=SpanPayload.uid_to_bytes(span_uid), **span.model_dump_byte_ids()
         )
         return Response(status_code=HTTPStatus.OK)
 
-    async def patch_update_span(self, span_id: str, span_data: SpanDataPayload):
+    async def patch_update_span(self, span_uid: str, span_data: SpanDataPayload):
         self.span_db.update_data_json(
-            id=SpanPayload.id_to_bytes(span_id), data_json=span_data.data_json
+            uid=SpanPayload.uid_to_bytes(span_uid), data_json=span_data.data_json
         )
         return Response(status_code=HTTPStatus.OK)
 
-    async def get_children_ids(self, span_id: str) -> list[str]:
-        child_ids: list[bytes] = self.span_db.get_children_ids(
-            id=SpanPayload.id_to_bytes(span_id)
+    async def get_children_ids(self, span_uid: str) -> list[str]:
+        child_uids: list[bytes] = self.span_db.get_children_uids(
+            uid=SpanPayload.uid_to_bytes(span_uid)
         )
-        return [SpanPayload.id_to_str(id) for id in child_ids]
+        return [SpanPayload.uid_to_str(uid) for uid in child_uids]
 
     async def get_root_span_ids(self) -> list[str]:
-        ids: list[bytes] = self.span_db.get_root_ids()
-        return [SpanPayload.id_to_str(id) for id in ids]
+        uids: list[bytes] = self.span_db.get_root_uids()
+        return [SpanPayload.uid_to_str(uid) for uid in uids]
 
     @classmethod
     def get_span_server_router(

@@ -1,10 +1,10 @@
 import logging
-import uuid
 from contextlib import AbstractContextManager
 from typing import Any, Final, Self
 
 from context_tracer.constants import DATA_KEY, NAME_KEY
 from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
+from context_tracer.utils.id_utils import new_uid
 
 from .trace_server import SpanClientAPI
 
@@ -21,30 +21,30 @@ class TraceSpanRemote(TraceSpan, AbstractContextManager):
 
     """
 
-    _span_id: bytes
+    _span_uid: bytes
     client: SpanClientAPI
 
-    def __init__(self, client: SpanClientAPI, span_id: bytes) -> None:
+    def __init__(self, client: SpanClientAPI, span_uid: bytes) -> None:
         self.client = client
-        self._span_id = span_id
+        self._span_uid = span_uid
         super().__init__()
 
     @property
-    def id(self) -> bytes:
-        return self._span_id
+    def uid(self) -> bytes:
+        return self._span_uid
 
     @property
     def name(self) -> str:
-        return self.client.get_span(id=self._span_id)[NAME_KEY]
+        return self.client.get_span(uid=self._span_uid)[NAME_KEY]
 
     @property
     def data(self) -> dict[str, Any]:
-        return self.client.get_span(id=self._span_id)[DATA_KEY]
+        return self.client.get_span(uid=self._span_uid)[DATA_KEY]
 
     @property
     def children(self: Self) -> list[Self]:
-        child_ids: list[bytes] = self.client.get_children_ids(id=self._span_id)
-        return [self.__class__(client=self.client, span_id=id) for id in child_ids]
+        child_ids: list[bytes] = self.client.get_children_uids(uid=self._span_uid)
+        return [self.__class__(client=self.client, span_uid=id) for id in child_ids]
 
     @classmethod
     def new(
@@ -52,26 +52,26 @@ class TraceSpanRemote(TraceSpan, AbstractContextManager):
         client: SpanClientAPI,
         name: str,
         data: dict[str, Any],
-        parent_id: bytes | None,
+        parent_uid: bytes | None,
     ) -> Self:
-        span_id = uuid.uuid1().bytes
+        span_uid = new_uid()
         client.put_new_span(
-            id=span_id,
+            uid=span_uid,
             name=name,
             data=data,
-            parent_id=parent_id,
+            parent_uid=parent_uid,
         )
-        return cls(client=client, span_id=span_id)
+        return cls(client=client, span_uid=span_uid)
 
     def new_child(self: Self, **data) -> Self:
         name = data.pop(NAME_KEY, DEFAULT_SPAN_NAME)
         return self.new(
-            client=self.client, name=name, data=data, parent_id=self._span_id
+            client=self.client, name=name, data=data, parent_uid=self._span_uid
         )
 
     def update_data(self, **new_data) -> None:
         self.client.patch_update_span(
-            id=self._span_id,
+            uid=self._span_uid,
             data=new_data,
         )
 
@@ -79,30 +79,30 @@ class TraceSpanRemote(TraceSpan, AbstractContextManager):
 class SpanTreeRemote(TraceTree):
     """ """
 
-    _id: bytes
+    _uid: bytes
     _name: str
-    _parent_id: bytes | None
+    _parent_uid: bytes | None
     _data: dict[str, Any]
     client: SpanClientAPI
 
     def __init__(
         self,
         client: SpanClientAPI,
-        id: bytes,
+        uid: bytes,
         name: str,
         data: dict[str, Any],
-        parent_id: bytes | None,
+        parent_uid: bytes | None,
     ) -> None:
         self.client = client
-        self._id = id
+        self._uid = uid
         self._name = name
         self._data = data
-        self._parent_id = parent_id
+        self._parent_uid = parent_uid
         super().__init__()
 
     @property
-    def id(self) -> bytes:
-        return self._id
+    def uid(self) -> bytes:
+        return self._uid
 
     @property
     def name(self) -> str:
@@ -114,16 +114,16 @@ class SpanTreeRemote(TraceTree):
 
     @property
     def children(self: Self) -> list[Self]:
-        child_ids: list[bytes] = self.client.get_children_ids(id=self._id)
-        return [self.from_remote(client=self.client, id=id) for id in child_ids]
+        child_uids: list[bytes] = self.client.get_children_uids(uid=self._uid)
+        return [self.from_remote(client=self.client, uid=uid) for uid in child_uids]
 
     @classmethod
     def from_remote(
         cls,
         client: SpanClientAPI,
-        id: bytes,
+        uid: bytes,
     ) -> Self:
-        span_dict = client.get_span(id=id)
+        span_dict = client.get_span(uid=uid)
         return cls(client=client, **span_dict)
 
 
@@ -139,25 +139,25 @@ class TracingRemote(Tracing[TraceSpanRemote, SpanTreeRemote]):
         self._root_name = name
 
     @property
-    def _root_id(self) -> bytes:
+    def _root_uid(self) -> bytes:
         return self._api_client.get_root_span_ids()[0]
 
     @property
     def root_span(self) -> TraceSpanRemote:
         """Root context that is the parent of all other contexts."""
-        return TraceSpanRemote(client=self._api_client, span_id=self._root_id)
+        return TraceSpanRemote(client=self._api_client, span_uid=self._root_uid)
 
     @property
     def tree(self) -> SpanTreeRemote:
         """Tree representation of the root of the trace tree."""
-        return SpanTreeRemote.from_remote(client=self._api_client, id=self._root_id)
+        return SpanTreeRemote.from_remote(client=self._api_client, uid=self._root_uid)
 
     def __enter__(self: Self) -> Self:
         TraceSpanRemote.new(
             client=self._api_client,
             name=self._root_name,
             data={},
-            parent_id=None,
+            parent_uid=None,
         )
         return super().__enter__()
 
