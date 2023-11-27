@@ -33,6 +33,7 @@ UID_KEY: Final[str] = "uid"
 PARENT_UID_KEY: Final[str] = "parent_uid"
 NAME_KEY: Final[str] = "name"
 DATA_KEY: Final[str] = "data_json"
+UPDATED_TIME_KEY: Final[str] = "timestamp_last_updated"
 
 
 # TODO: Test if this is serializable
@@ -60,18 +61,42 @@ class SpanDataBase:
 
     def init_db(self) -> None:
         """Initialize the database."""
+        # Initialize the database
+        # UID is primary key
+        # Create a trigger to timestamp the last update
         CREATE_TABLE_SQL = f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
                 {UID_KEY} BLOB PRIMARY KEY,
                 {PARENT_UID_KEY} BLOB,
                 {NAME_KEY} TEXT NOT NULL,
-                {DATA_KEY} TEXT NOT NULL
+                {DATA_KEY} TEXT NOT NULL,
+                {UPDATED_TIME_KEY} FLOAT
             ) WITHOUT ROWID;
+        """
+        CREATE_TIMESTAMP_INSERT_TRIGGER_SQL = f"""
+        CREATE TRIGGER IF NOT EXISTS on_insert_update_{UPDATED_TIME_KEY}
+            AFTER INSERT ON {TABLE_NAME}
+        BEGIN
+            UPDATE {TABLE_NAME}
+            SET {UPDATED_TIME_KEY} = unixepoch('now','subsec')
+            WHERE {UID_KEY} = NEW.{UID_KEY};
+        END;
+        """
+        CREATE_TIMESTAMP_UPDATE_TRIGGER_SQL = f"""
+        CREATE TRIGGER IF NOT EXISTS on_update_update_{UPDATED_TIME_KEY}
+            AFTER UPDATE OF {DATA_KEY}, {NAME_KEY}, {PARENT_UID_KEY} ON {TABLE_NAME}
+        BEGIN
+            UPDATE {TABLE_NAME}
+            SET {UPDATED_TIME_KEY} = unixepoch('now','subsec')
+            WHERE {UID_KEY} = NEW.{UID_KEY};
+        END;
         """
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         logging.debug("Initializing database...")
         with self.cursor() as cursor:
             cursor.execute(CREATE_TABLE_SQL)
+            cursor.execute(CREATE_TIMESTAMP_INSERT_TRIGGER_SQL)
+            cursor.execute(CREATE_TIMESTAMP_UPDATE_TRIGGER_SQL)
             cursor.connection.commit()
         assert self.db_path.exists()
         logging.info(f"Database initialized at {self.db_path!r}.")
@@ -217,7 +242,7 @@ class SpanDataBase:
             rows = cursor.fetchall()
         return [row[0] for row in rows]
 
-    def get_last_span_uid(self) -> bytes | None:
+    def get_last_span_uid(self) -> bytes:
         """
         Get the uid of the last span in the database table.
 
@@ -229,6 +254,16 @@ class SpanDataBase:
         with self.cursor() as cursor:
             cursor.execute(GET_LAST_SPAN_UID_SQL)
             row = cursor.fetchone()
-        if row is None:
-            return None
+        assert row is not None, "No spans in database."
         return row[0]
+
+    def get_last_updated_span_uid(self) -> tuple[bytes, float]:
+        """
+        Get the uid of the last span in the database table.
+        """
+        GET_LAST_UPDATED_SPAN_UID_SQL = f"SELECT {UID_KEY}, {UPDATED_TIME_KEY} FROM {TABLE_NAME} ORDER BY {UPDATED_TIME_KEY} DESC LIMIT 1;"
+        with self.cursor() as cursor:
+            cursor.execute(GET_LAST_UPDATED_SPAN_UID_SQL)
+            row = cursor.fetchone()
+        assert row is not None, "No spans in database."
+        return row[0], row[1]

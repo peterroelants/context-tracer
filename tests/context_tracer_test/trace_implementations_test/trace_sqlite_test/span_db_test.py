@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -170,7 +171,7 @@ def test_get_span_ids_from_name(tmp_db: SpanDataBase) -> None:
     )
 
 
-def test_get_last_span_id(tmp_db: SpanDataBase) -> None:
+def test_get_last_span_uid(tmp_db: SpanDataBase) -> None:
     for i in range(5):
         span = SpanDbRow(
             uid=new_uid(),
@@ -180,3 +181,31 @@ def test_get_last_span_id(tmp_db: SpanDataBase) -> None:
         )
         tmp_db.insert_or_update(**span.model_dump())
         assert tmp_db.get_last_span_uid() == span.uid
+
+
+def test_get_last_updated_span_uid(tmp_db: SpanDataBase) -> None:
+    uids = []
+    time_prev: float = 0.0
+    # Test new
+    for i in range(5):
+        span = SpanDbRow(
+            uid=new_uid(),
+            name=f"span_{i}",
+            data_json="{}",
+            parent_uid=None,
+        )
+        uids.append(span.uid)
+        tmp_db.insert_or_update(**span.model_dump())
+        uid_updated_last, time_updated_last = tmp_db.get_last_updated_span_uid()
+        assert uid_updated_last == span.uid
+        assert time_updated_last > time_prev
+        time_prev = time_updated_last
+        time.sleep(0.001)
+    # Test update data_json
+    for i in reversed(range(5)):
+        tmp_db.update_data_json(uid=uids[i], data_json=json.dumps(dict(test=i)))
+        uid_updated_last, time_updated_last = tmp_db.get_last_updated_span_uid()
+        assert uid_updated_last == uids[i]
+        assert time_updated_last > time_prev
+        time_prev = time_updated_last
+        time.sleep(0.001)
