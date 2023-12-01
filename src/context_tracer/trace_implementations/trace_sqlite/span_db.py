@@ -94,6 +94,9 @@ class SpanDataBase:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         logging.debug("Initializing database...")
         with self.cursor() as cursor:
+            # Set Write-Ahead Logging (WAL) mode to enable concurrent reads and writes
+            # https://www.sqlite.org/wal.html
+            cursor.execute("PRAGMA journal_mode=WAL;")
             cursor.execute(CREATE_TABLE_SQL)
             cursor.execute(CREATE_TIMESTAMP_INSERT_TRIGGER_SQL)
             cursor.execute(CREATE_TIMESTAMP_UPDATE_TRIGGER_SQL)

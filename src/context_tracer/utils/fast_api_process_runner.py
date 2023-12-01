@@ -2,8 +2,9 @@ import logging
 import multiprocessing as mp
 import socket
 from abc import abstractmethod
+from collections.abc import Callable
 from types import TracebackType
-from typing import Protocol, Self, runtime_checkable
+from typing import Any, Protocol, Self, runtime_checkable
 
 import uvicorn
 from fastapi import FastAPI
@@ -45,36 +46,40 @@ class FastAPIProcessRunner(ServerContextProtocol):
 
     host: str
     port: int
-    _app: FastAPI
-    _server: uvicorn.Server
     _socket: socket.socket | None = None
     _proc: mp.Process | None = None
     _url: str | None = None
+    # Function to create the FastAPI application (needed to avoid FastAPI pickling issues)
+    _create_app: Callable[[], FastAPI]
+    _uvicorn_server_kwargs: dict[str, Any]
 
     def __init__(
         self,
-        app: FastAPI,
+        create_app: Callable[[], FastAPI],
         host: str = "localhost",
         port: int = 0,
         # Extra kwargs are passed to `uvicorn.Config` used to create the uvicorn Server.
-        **server_kwargs,
+        **server_kwargs: dict[str, Any],
     ):
         self.host = host
         self.port = port
-        self._app = app
-        self._server = uvicorn.Server(config=uvicorn.Config(self._app, **server_kwargs))
+        self._create_app = create_app
+        self._uvicorn_server_kwargs = server_kwargs
 
     @property
-    def url(self) -> str | None:
+    def url(self) -> str:
+        assert self._url is not None, "Server not started!"
         return self._url
 
-    @property
-    def server(self) -> uvicorn.Server:
-        if self._proc is not None and self._proc.is_alive():
-            raise RuntimeError(
-                "Server cannot be accessed because it is running in a separate process!"
-            )
-        return self._server
+    def _run(self, sockets: list[socket.socket]) -> None:
+        """
+        Run the server in the current process.
+        """
+        app = self._create_app()
+        server = uvicorn.Server(
+            config=uvicorn.Config(app, **self._uvicorn_server_kwargs)
+        )
+        server.run(sockets=sockets)
 
     def start(self) -> None:
         """
@@ -82,7 +87,7 @@ class FastAPIProcessRunner(ServerContextProtocol):
         """
         if self._proc is not None and self._proc.is_alive():
             raise RuntimeError("Server already started!")
-        # Setup socket seperatly to get the actual port assigned (in case port=0 was used)
+        # Setup socket separately to get the actual port assigned (in case port=0 was used)
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.bind((self.host, self.port))
         self._socket.listen(1)
@@ -90,7 +95,7 @@ class FastAPIProcessRunner(ServerContextProtocol):
         self.port = self._socket.getsockname()[1]
         # Start server in new process
         self._proc = mp.Process(
-            target=self.server.run,
+            target=self._run,
             kwargs=dict(sockets=[self._socket]),
             daemon=True,
         )

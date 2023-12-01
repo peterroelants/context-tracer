@@ -1,1 +1,1 @@
-from .trace_sqlite import TraceSpanSqlite, TracingSqlite
+from .trace_sqlite import TraceSpanSqlite, TraceTreeSqlite, TracingSqlite

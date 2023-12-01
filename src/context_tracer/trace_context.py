@@ -123,6 +123,7 @@ class TraceTree(Protocol):
 
 # TODO: Move Tracing and TraceTree to a separate module? Maybe even have a subtype of TraceSpan to have data and name?
 # TODO: Rename to Tracer to be consistent with OpenTelemetry? https://opentelemetry.io/docs/concepts/signals/traces/#tracer-provider
+# TODO: Documentation: prefer to inherit from this to keep functionality, but can also implement this protocol
 @runtime_checkable
 class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
     """
@@ -134,6 +135,8 @@ class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
     # TODO: Add Generic type to `AbstractContextManager`?
     _span_ctx_mngr: ContextManagerProtocol | None = None
 
+    # TODO: Does root span need to be accessible? It only needs to be to enter the context...
+    # Can this be given as an argument to __enter__?
     @property
     @abstractmethod
     def root_span(self) -> TraceSpanType_cov:

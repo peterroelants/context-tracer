@@ -1,28 +1,23 @@
+from pathlib import Path
+
 from context_tracer.trace import get_current_span_safe, log_with_trace, trace
 from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
-from context_tracer.trace_implementations.trace_server.trace_server import (
-    SpanClientAPI,
-)
 from context_tracer.trace_implementations.trace_server.tracer_remote import (
-    SpanTreeRemote,
-    TraceSpanRemote,
     TracingRemote,
 )
 
 
-def test_trace_remote(tmp_api_client: SpanClientAPI) -> None:
-    with TracingRemote(api_client=tmp_api_client) as tracing:
+def test_trace_remote(tmp_db_path: Path) -> None:
+    with TracingRemote(db_path=tmp_db_path) as tracing:
         pass  # Just root context
         assert isinstance(tracing, Tracing)
         assert tracing.root_span is not None
         assert isinstance(tracing.root_span, TraceSpan)
-        assert isinstance(tracing.root_span, TraceSpanRemote)
     assert tracing.tree is not None
     assert isinstance(tracing.tree, TraceTree)
-    assert isinstance(tracing.tree, SpanTreeRemote)
 
 
-def test_trace_remote_program(tmp_api_client: SpanClientAPI) -> None:
+def test_trace_remote_program(tmp_db_path: Path) -> None:
     def program():
         @trace
         def do_a():
@@ -49,17 +44,14 @@ def test_trace_remote_program(tmp_api_client: SpanClientAPI) -> None:
 
         do_c()
 
-    with TracingRemote(api_client=tmp_api_client):
+    with TracingRemote(db_path=tmp_db_path) as tracing:
         program()
-    # Ignore previous and make sure reading from an existing server works
-    read_tracing = TracingRemote(api_client=tmp_api_client)
-    tree_root = read_tracing.tree
-    assert isinstance(tree_root, SpanTreeRemote)
+    tree_root = tracing.tree
     assert isinstance(tree_root, TraceTree)
     assert tree_root.name == "root"
     assert len(tree_root.children) == 1
 
-    def get_leafs(tree_root: SpanTreeRemote) -> list[SpanTreeRemote]:
+    def get_leafs(tree_root: TraceTree) -> list[TraceTree]:
         if len(tree_root.children) == 0:
             return [tree_root]
         leafs = []
@@ -72,7 +64,7 @@ def test_trace_remote_program(tmp_api_client: SpanClientAPI) -> None:
     for leaf in leafs:
         assert leaf.name in {"A", "D", "E"}
 
-    def found_c(tree_root: SpanTreeRemote) -> bool:
+    def found_c(tree_root: TraceTree) -> bool:
         if tree_root.name == "C":
             return True
         for child in tree_root.children:
@@ -83,7 +75,7 @@ def test_trace_remote_program(tmp_api_client: SpanClientAPI) -> None:
     assert found_c(tree_root)
 
 
-def test_update_data(tmp_api_client: SpanClientAPI) -> None:
+def test_update_data(tmp_db_path: Path) -> None:
     @trace(name="test")
     def get_trace_update_data():
         span = get_current_span_safe()
@@ -91,7 +83,7 @@ def test_update_data(tmp_api_client: SpanClientAPI) -> None:
         span.update_data(test_var="data_1", a_specific=1, common=dict(a=1, b=2))
         span.update_data(test_var="data_2", b_specific=22, common=dict(b=20, c=30))
 
-    with TracingRemote(api_client=tmp_api_client) as tracing:
+    with TracingRemote(db_path=tmp_db_path) as tracing:
         get_trace_update_data()
 
     test_span = tracing.tree.children[0]

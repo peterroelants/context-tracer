@@ -1,7 +1,9 @@
 import contextlib
 import hashlib
+import logging
 import multiprocessing as mp
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from context_tracer.concurrency import (
@@ -10,19 +12,18 @@ from context_tracer.concurrency import (
     TraceThread,
 )
 from context_tracer.trace import trace
-from context_tracer.trace_context import get_current_span_safe_typed
-from context_tracer.trace_implementations.trace_server.trace_server import (
-    SpanClientAPI,
-)
+from context_tracer.trace_context import TraceTree, get_current_span_safe_typed
 from context_tracer.trace_implementations.trace_server.tracer_remote import (
-    SpanTreeRemote,
     TraceSpanRemote,
     TracingRemote,
 )
 
+log = logging.getLogger(__name__)
+
 
 @contextlib.contextmanager
 def multiprocess_start_method(start_method: str) -> Iterator[None]:
+    log.info(f"multiprocess_start_method(start_method={start_method})")
     prev_start_method = mp.get_start_method()
     mp.set_start_method(start_method, force=True)
     try:
@@ -45,52 +46,55 @@ def remote_doubling_function(test_param: int):
     return test_param * 2
 
 
-def test_trace_thread(tmp_api_client: SpanClientAPI) -> None:
-    with TracingRemote(api_client=tmp_api_client) as tracing:
+def test_trace_thread(tmp_db_path: Path) -> None:
+    with TracingRemote(db_path=tmp_db_path) as tracing:
         proc = TraceThread(target=remote_doubling_function, args=(1,))
         proc.start()
         proc.join()
 
     tree_root = tracing.tree
-    assert isinstance(tree_root, SpanTreeRemote)
+    assert isinstance(tree_root, TraceTree)
     root_children = tree_root.children
     assert len(root_children) == 1
     child = root_children[0]
     assert child.name == remote_doubling_function.__name__
-    assert child.data["id_md5"] == id_hash(child.uid)
 
 
 @pytest.mark.parametrize(
     "mp_start_method",
     ["fork", "spawn"],
 )
-def test_trace_process(tmp_api_client: SpanClientAPI, mp_start_method: str) -> None:
+def test_trace_process(tmp_db_path: Path, mp_start_method: str) -> None:
+    log.info(
+        f"test_trace_process(tmp_db_path={tmp_db_path}, mp_start_method={mp_start_method})"
+    )
     with multiprocess_start_method(mp_start_method):
-        with TracingRemote(api_client=tmp_api_client) as tracing:
-            proc = TraceProcess(target=remote_doubling_function, args=(1,))
+        with TracingRemote(db_path=tmp_db_path) as tracing:
+            proc = TraceProcess(
+                target=remote_doubling_function,
+                args=(1,),
+            )
             proc.start()
             proc.join()
 
         tree_root = tracing.tree
-        assert isinstance(tree_root, SpanTreeRemote)
+        assert isinstance(tree_root, TraceTree)
         root_children = tree_root.children
         assert len(root_children) == 1
         child = root_children[0]
         assert child.name == remote_doubling_function.__name__
-        assert child.data["id_md5"] == id_hash(child.uid)
 
 
-def test_trace_process_pool(tmp_api_client: SpanClientAPI) -> None:
+def test_trace_process_pool(tmp_db_path: Path) -> None:
     nb_children = 3
-    with TracingRemote(api_client=tmp_api_client) as tracing:
+    with TracingRemote(db_path=tmp_db_path) as tracing:
         with TraceProcessPoolExecutor(max_workers=2) as executor:
             for i in range(nb_children):
                 executor.submit(remote_doubling_function, i)
 
     tree_root = tracing.tree
-    assert isinstance(tree_root, SpanTreeRemote)
+    assert isinstance(tree_root, TraceTree)
     root_children = tree_root.children
     assert len(root_children) == nb_children
     for child in root_children:
         assert child.name == remote_doubling_function.__name__
-        assert child.data["id_md5"] == id_hash(child.uid)

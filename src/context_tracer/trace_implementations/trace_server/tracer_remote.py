@@ -1,12 +1,20 @@
 import logging
 from contextlib import AbstractContextManager
+from pathlib import Path
 from typing import Any, Final, Self
 
 from context_tracer.constants import DATA_KEY, NAME_KEY
-from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
+from context_tracer.trace_context import TraceSpan, Tracing
+from context_tracer.trace_implementations.trace_server.trace_server import (
+    FastAPIProcessRunner,
+    SpanClientAPI,
+    SpanDataBase,
+    create_span_server,
+)
+from context_tracer.trace_implementations.trace_sqlite.trace_sqlite import (
+    TraceTreeSqlite,
+)
 from context_tracer.utils.id_utils import new_uid
-
-from .trace_server import SpanClientAPI
 
 log = logging.getLogger(__name__)
 
@@ -76,92 +84,59 @@ class TraceSpanRemote(TraceSpan, AbstractContextManager):
         )
 
 
-class SpanTreeRemote(TraceTree):
-    """ """
-
-    _uid: bytes
-    _name: str
-    _parent_uid: bytes | None
-    _data: dict[str, Any]
-    client: SpanClientAPI
+class TracingRemote(Tracing[TraceSpanRemote, TraceTreeSqlite]):
+    span_db: SpanDataBase
+    _root_name: str
+    _server: FastAPIProcessRunner | None = None
+    _api_client: SpanClientAPI | None = None
+    _root_uid: bytes | None
 
     def __init__(
-        self,
-        client: SpanClientAPI,
-        uid: bytes,
-        name: str,
-        data: dict[str, Any],
-        parent_uid: bytes | None,
+        self, db_path: Path, name: str = "root", root_uid: bytes | None = None
     ) -> None:
-        self.client = client
-        self._uid = uid
-        self._name = name
-        self._data = data
-        self._parent_uid = parent_uid
-        super().__init__()
-
-    @property
-    def uid(self) -> bytes:
-        return self._uid
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def data(self) -> dict[str, Any]:
-        return self._data
-
-    @property
-    def children(self: Self) -> list[Self]:
-        child_uids: list[bytes] = self.client.get_children_uids(uid=self._uid)
-        return [self.from_remote(client=self.client, uid=uid) for uid in child_uids]
-
-    @classmethod
-    def from_remote(
-        cls,
-        client: SpanClientAPI,
-        uid: bytes,
-    ) -> Self:
-        span_dict = client.get_span(uid=uid)
-        return cls(client=client, **span_dict)
-
-
-class TracingRemote(Tracing[TraceSpanRemote, SpanTreeRemote]):
-    _api_client: SpanClientAPI
-    _root_name: str
-
-    def __init__(self, api_client: SpanClientAPI, name: str = "root") -> None:
-        self._api_client = api_client
-        assert (
-            self._api_client.is_ready()
-        ), f"Server at {self._api_client.url!r} is not ready."
+        log.debug(f"TracingRemote(db_path={db_path}, name={name})")
+        self.span_db = SpanDataBase(db_path=db_path)
         self._root_name = name
-
-    @property
-    def _root_uid(self) -> bytes:
-        return self._api_client.get_root_span_ids()[0]
+        self._root_uid = root_uid
 
     @property
     def root_span(self) -> TraceSpanRemote:
         """Root context that is the parent of all other contexts."""
+        assert self._api_client is not None, "No API Client found, Tracing no running!"
+        assert self._root_uid is not None, "No Root UID found, Tracing not started!"
         return TraceSpanRemote(client=self._api_client, span_uid=self._root_uid)
 
     @property
-    def tree(self) -> SpanTreeRemote:
-        """Tree representation of the root of the trace tree."""
-        return SpanTreeRemote.from_remote(client=self._api_client, uid=self._root_uid)
+    def tree(self) -> TraceTreeSqlite:
+        assert self._root_uid is not None, "No Root UID found, Tracing not started!"
+        return TraceTreeSqlite(span_db=self.span_db, span_uid=self._root_uid)
 
     def __enter__(self: Self) -> Self:
-        TraceSpanRemote.new(
-            client=self._api_client,
-            name=self._root_name,
-            data={},
-            parent_uid=None,
+        """Start a new tracing."""
+        self._server: FastAPIProcessRunner = create_span_server(
+            db_path=self.span_db.db_path
         )
+        self._server.__enter__()
+        self._api_client = SpanClientAPI(url=self._server.url)
+        self._api_client.wait_for_ready()
+        assert (
+            self._api_client.is_ready()
+        ), f"Server at {self._api_client.url!r} is not ready."
+        if self._root_uid is None:
+            self._root_uid = TraceSpanRemote.new(
+                client=self._api_client,
+                name=self._root_name,
+                data={},
+                parent_uid=None,
+            ).uid
         return super().__enter__()
 
     def __exit__(self, *args, **kwargs) -> None:
-        """Reset the trace."""
-        super().__exit__(*args, **kwargs)
+        """Reset the tracing."""
+        try:
+            super().__exit__(*args, **kwargs)
+        finally:
+            if self._server is not None:
+                self._server.__exit__(*args, **kwargs)
+            self._server = None
         return

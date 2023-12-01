@@ -14,7 +14,7 @@ DEFAULT_SPAN_NAME: Final[str] = "no-name"
 
 
 # Span #####################################################
-class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
+class TraceSpanSqlite(TraceSpan, AbstractContextManager):
     """
     TODO: Documentation
     Node in the trace tree.
@@ -41,21 +41,6 @@ class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
     @property
     def data(self) -> JSONDictType:
         return json.loads(self.span_db.get_data_json(uid=self._span_uid))
-
-    @property
-    def parent(self: Self) -> Self | None:
-        parent_uid = self.span_db.get_parent_uid(uid=self._span_uid)
-        if parent_uid is None:
-            return None
-        return self.__class__(span_db=self.span_db, span_uid=parent_uid)
-
-    @property
-    def children(self: Self) -> list[Self]:
-        children_uids = self.span_db.get_children_uids(uid=self._span_uid)
-        return [
-            self.__class__(span_db=self.span_db, span_uid=child_uid)
-            for child_uid in children_uids
-        ]
 
     @classmethod
     def new(
@@ -86,33 +71,61 @@ class TraceSpanSqlite(TraceSpan, TraceTree, AbstractContextManager):
         self.span_db.update_data_json(uid=self._span_uid, data_json=data_json)
 
 
-class TracingSqlite(Tracing[TraceSpanSqlite, TraceSpanSqlite]):
+class TraceTreeSqlite(TraceTree):
     span_db: SpanDataBase
+    _span_uid: bytes
 
-    def __init__(self, db_path: Path):
+    def __init__(self, span_db: SpanDataBase, span_uid: bytes) -> None:
+        self.span_db = span_db
+        self._span_uid = span_uid
+        super().__init__()
+
+    @property
+    def name(self) -> str:
+        return self.span_db.get_name(uid=self._span_uid)
+
+    @property
+    def data(self) -> JSONDictType:
+        return json.loads(self.span_db.get_data_json(uid=self._span_uid))
+
+    @property
+    def parent(self: Self) -> Self | None:
+        parent_uid = self.span_db.get_parent_uid(uid=self._span_uid)
+        if parent_uid is None:
+            return None
+        return self.__class__(span_db=self.span_db, span_uid=parent_uid)
+
+    @property
+    def children(self: Self) -> list[Self]:
+        children_uids = self.span_db.get_children_uids(uid=self._span_uid)
+        return [
+            self.__class__(span_db=self.span_db, span_uid=child_uid)
+            for child_uid in children_uids
+        ]
+
+
+class TracingSqlite(Tracing[TraceSpanSqlite, TraceTreeSqlite]):
+    span_db: SpanDataBase
+    _root_uid: bytes
+
+    def __init__(
+        self, db_path: Path, root_name: str = "root", root_uid: bytes | None = None
+    ) -> None:
         self.span_db = SpanDataBase(db_path=db_path)
+        if root_uid is None:
+            root_uid = TraceSpanSqlite.new(
+                span_db=self.span_db,
+                name=root_name,
+                data={},
+                parent_uid=None,
+            ).uid
+        self._root_uid = root_uid
 
     @property
     def root_span(self) -> TraceSpanSqlite:
-        return self._table_root
+        return TraceSpanSqlite(span_db=self.span_db, span_uid=self._root_uid)
 
     @property
-    def _table_root(self) -> TraceSpanSqlite:
-        """Get the root node from the database or create a new one if it does not exist."""
-        root_uids = self.span_db.get_root_uids()
-        if len(root_uids) == 1:
-            return TraceSpanSqlite(span_db=self.span_db, span_uid=root_uids[0])
-        elif len(root_uids) == 0:
-            return TraceSpanSqlite.new(
-                span_db=self.span_db,
-                name="root",
-                data={},
-                parent_uid=None,
-            )
-        else:  # len(root_spans) > 1
-            raise ValueError(f"No singular node found: {root_uids=!r}!")
-
-    @property
-    def tree(self) -> TraceSpanSqlite:
+    def tree(self) -> TraceTreeSqlite:
         """Return a representable version of the root of the trace tree."""
-        return self.root_span
+        return TraceTreeSqlite(span_db=self.span_db, span_uid=self._root_uid)

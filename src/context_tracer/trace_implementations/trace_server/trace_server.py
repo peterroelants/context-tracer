@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import json
 import logging
 import time
@@ -263,19 +264,19 @@ class SpanServerAPI:
         return router
 
 
-def create_span_server(db_path: Path) -> FastAPIProcessRunner:
-    fast_api_app = create_span_server_app(db_path=db_path)
-    return FastAPIProcessRunner(fast_api_app)
+def create_span_server(db_path: Path, **server_kwargs) -> FastAPIProcessRunner:
+    create_app = functools.partial(_create_span_app, db_path=db_path)
+    return FastAPIProcessRunner(create_app=create_app, **server_kwargs)
 
 
 @contextlib.contextmanager
-def running_server(db_path: Path) -> Iterator[FastAPIProcessRunner]:
-    server = create_span_server(db_path=db_path)
+def running_server(db_path: Path, **server_kwargs) -> Iterator[FastAPIProcessRunner]:
+    server = create_span_server(db_path=db_path, **server_kwargs)
     with server:
         yield server
 
 
-def create_span_server_app(db_path: Path) -> FastAPI:
+def _create_span_app(db_path: Path) -> FastAPI:
     """
     Create a FastAPI app with the db-backed span server endpoints.
     """

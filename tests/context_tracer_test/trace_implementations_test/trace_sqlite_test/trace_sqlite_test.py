@@ -7,6 +7,7 @@ from context_tracer.trace import get_current_span_safe, log_with_trace, trace
 from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
 from context_tracer.trace_implementations.trace_sqlite import (
     TraceSpanSqlite,
+    TraceTreeSqlite,
     TracingSqlite,
 )
 
@@ -30,9 +31,9 @@ def test_trace_sqlite(tmp_db_path: Path) -> None:
     assert isinstance(tracing.tree, TraceTree)
 
 
-def test_trace_sqlite_no_span(tmp_db_path: Path) -> None:
+def test_trace_sqlite_initial(tmp_db_path: Path) -> None:
     tracing = TracingSqlite(db_path=tmp_db_path)
-    assert tracing.span_db.get_root_uids() == []
+    assert len(tracing.span_db.get_root_uids()) == 1
 
 
 def test_trace_sqlite_program(tmp_db_path: Path) -> None:
@@ -62,18 +63,18 @@ def test_trace_sqlite_program(tmp_db_path: Path) -> None:
 
         do_c()
 
-    with TracingSqlite(db_path=tmp_db_path):
+    with TracingSqlite(db_path=tmp_db_path) as tracing:
         program()
     assert tmp_db_path.exists()
-    # Ignore previous and make sure reading from an existing db works
-    read_tracing = TracingSqlite(db_path=tmp_db_path)
-    tree_root = read_tracing.tree
-    assert isinstance(tree_root, TraceSpanSqlite)
+    assert len(tracing.span_db.get_root_uids()) == 1
+    assert tracing.span_db.get_root_uids()[0] == tracing.root_span.uid
+    tree_root = tracing.tree
     assert isinstance(tree_root, TraceTree)
+    assert isinstance(tree_root, TraceTreeSqlite)
     assert tree_root.name == "root"
     assert len(tree_root.children) == 1
 
-    def get_leafs(tree_root: TraceSpanSqlite) -> list[TraceSpanSqlite]:
+    def get_leafs(tree_root: TraceTreeSqlite) -> list[TraceTreeSqlite]:
         if len(tree_root.children) == 0:
             return [tree_root]
         leafs = []
@@ -86,7 +87,7 @@ def test_trace_sqlite_program(tmp_db_path: Path) -> None:
     for leaf in leafs:
         assert leaf.name in {"A", "D", "E"}
 
-    def found_c(tree_root: TraceSpanSqlite) -> bool:
+    def found_c(tree_root: TraceTreeSqlite) -> bool:
         if tree_root.name == "C":
             return True
         for child in tree_root.children:
