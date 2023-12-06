@@ -44,11 +44,12 @@ var flame_chart = render_flame_chart(
 <!-- Websocket Connection -->
 <script type="text/javascript">
 const ws = new WebSocket("{{ websocket_url }}");
-console.log("Websocket created");
+console.log("Websocket created: ", ws);
 ws.onmessage = function(event) {
     // Recieve data from websocket
     console.log("Websocket data received", event);
     let obj = JSON.parse(event.data);
+    console.log("Websocket data parsed", obj);
     // Update title
     document.getElementById("flamechart-title").innerHTML = obj.name;
     // Update flame chart

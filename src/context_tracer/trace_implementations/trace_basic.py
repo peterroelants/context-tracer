@@ -13,6 +13,7 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
     In-memory stored implementation of Span.
 
     Implements both Span (parent relation) and TraceTree (children relation) interfaces.
+    Mainly for illustrative purposes.
     """
 
     _uid: bytes

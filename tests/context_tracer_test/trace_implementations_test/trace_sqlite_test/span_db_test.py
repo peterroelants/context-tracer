@@ -198,6 +198,7 @@ def test_get_last_updated_span_uid(tmp_db: SpanDataBase) -> None:
         tmp_db.insert_or_update(**span.model_dump())
         uid_updated_last, time_updated_last = tmp_db.get_last_updated_span_uid()
         assert uid_updated_last == span.uid
+        assert time_updated_last is not None
         assert time_updated_last > time_prev
         time_prev = time_updated_last
         time.sleep(0.001)
@@ -206,6 +207,7 @@ def test_get_last_updated_span_uid(tmp_db: SpanDataBase) -> None:
         tmp_db.update_data_json(uid=uids[i], data_json=json.dumps(dict(test=i)))
         uid_updated_last, time_updated_last = tmp_db.get_last_updated_span_uid()
         assert uid_updated_last == uids[i]
+        assert time_updated_last is not None
         assert time_updated_last > time_prev
         time_prev = time_updated_last
         time.sleep(0.001)

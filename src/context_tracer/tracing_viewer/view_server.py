@@ -1,17 +1,30 @@
+import asyncio
+import contextlib
+import functools
+import html
+import json
 import logging
-import multiprocessing as mp
+import os
 import signal
-import socket
 from http import HTTPStatus
 from pathlib import Path
+from typing import Any, AsyncIterator, Final
 
-import uvicorn
-from fastapi import APIRouter, FastAPI, Response, WebSocket
+from fastapi import APIRouter, FastAPI, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.websockets import WebSocket, WebSocketState
 from websockets.exceptions import ConnectionClosedError
 
-from context_tracer.utils.async_mp_queue import AsyncMultiProcessQueue
+from context_tracer.trace_context import TraceTree
+from context_tracer.trace_implementations.trace_sqlite import TraceTreeSqlite
+from context_tracer.trace_implementations.trace_sqlite.span_db import (
+    SpanDataBase,
+)
+from context_tracer.utils.fast_api_process_runner import (
+    FastAPIProcessRunner,
+)
+from context_tracer.utils.json_encoder import AnyEncoder
 
 from .load_templates import get_flamechart_view
 
@@ -26,92 +39,53 @@ STATIC_PATH = "/static"
 WEBSOCKET_PATH = "/ws"
 
 
-class ViewServer:
+# TODO: Move this to some module?
+# TODO: Proper HTTP endpoints all using ID in path
+READINESS_ENDPOINT_PATH: Final[str] = "/api/status/ready"
+
+
+async def readiness() -> Response:
+    """Readiness check endpoint."""
+    return Response(content="ok", status_code=HTTPStatus.OK)
+
+
+# Server ###########################################################
+class ViewServerAPI:
     """
-    Webserver to serve flamechart view.
-
-    Usage:
-    ```python
-    server = ViewServer()
-    with server as url:
-        server.queue.put(data)
-    ```
-
-    - Self-contained class, no need to setup anything else.
-    - Use port 0 (ephemeral port) to get a random port.
-    - The webserver is started by entering the context manager.
-    - The webserver is started in a separate process and runs until the context manager exits.
-    - Use the queue to send data to the webserver.
-    - The webserver will send the data to the client via websocket.
-    - The client will render the flamechart.
+    API for Span server.
+    Provides POST endpoints to update the span database.
     """
 
+    span_db: SpanDataBase
     host: str
     port: int
-    _sock: socket.socket | None = None
-    _proc: mp.Process | None = None
+    websocket_path: str
+    export_html_path: Path | None
+    _websocket_active: bool = True
 
-    def __init__(self, host: str = "localhost", port: int = 0):
+    def __init__(
+        self,
+        span_db: SpanDataBase,
+        host: str,
+        port: int,
+        websocket_path: str,
+        export_html_path: Path | None = None,
+    ) -> None:
+        self.span_db = span_db
         self.host = host
         self.port = port
-        # Setup queue
-        self.queue: AsyncMultiProcessQueue = AsyncMultiProcessQueue()
-        # Router
-        self.router = APIRouter()
-        self.router.add_api_route("/", self.view, methods=["GET"])
-        # App
-        self.app = FastAPI()
-        self.app.mount(
-            STATIC_PATH, StaticNoCache(directory=STATIC_FILES_DIR), name="static"
-        )
-        self.app.include_router(self.router)
-        self.app.add_websocket_route(WEBSOCKET_PATH, self.websocket_endpoint)
-        # Server
-        self.server = ServerNoSignalHandler(
-            config=uvicorn.Config(self.app, log_level="info")
-        )
-
-    def __enter__(self) -> str:
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.bind((self.host, self.port))
-        self._sock.listen(1)
-        self.port = self._sock.getsockname()[1]
-        log.info(f"Webserver listening on {self.host}:{self.port}")
-        self._proc = mp.Process(
-            target=self.server.run,
-            args=(
-                [
-                    self._sock,
-                ],
-            ),
-            daemon=True,
-        )
-        self._proc.start()
-        log.debug(f"Webserver started on pid={self._proc.pid}")
-        url = f"http://{self.host}:{self.port}"
-        return url
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        log.debug("Waiting for webserver to finish")
-        try:
-            self.server.should_exit = True
-            self.server.handle_exit(signal.SIGINT, None)
-            if self._proc and self._proc.is_alive():
-                log.debug("Webserver still running, terminate")
-                self._proc.terminate()
-                self._proc.join()
-        finally:
-            if self._sock:
-                log.debug("Closing socket")
-                self._sock.close()
-        log.info("Webserver finished")
+        self.websocket_path = websocket_path
+        self.export_html_path = export_html_path
 
     async def view(self):
         """Main page to render flamechart."""
+        websocket_url = (
+            f"ws://{self.host}:{self.port}/{self.websocket_path.lstrip('/')}"
+        )
         flamechart_view_html = get_flamechart_view(
             css_js_static_path=STATIC_PATH,
             data_dict={},
-            websocket_url=f"ws://{self.host}:{self.port}{WEBSOCKET_PATH}",
+            websocket_url=websocket_url,
         )
         return HTMLResponse(content=flamechart_view_html, status_code=HTTPStatus.OK)
 
@@ -120,25 +94,149 @@ class ViewServer:
         Websocket endpoint to send data to web client for viewing.
         Listen for data on queue, send to web client.
         """
-        log.debug("Setup websocket")
         await websocket.accept()
-        log.debug("Websocket accepted")
+        timestamp_last_update: float = 0
         count = 0
-        while True:
+        while self._websocket_active:
             count += 1
-            log.debug(f"Waiting for data (iteration={count})")
-            data = await self.queue.get_async()
-            if data is None:
-                log.debug("Queue received None, exiting")
-                break
-            log.debug(f"Got data to send {len(data)=}")
-            try:
-                await websocket.send_text(data)
-                log.debug("Sent data, wait")
-            except ConnectionClosedError:
-                log.error("Client disconnected.")
-                break
-        log.info("Done sending data to websocket!")
+            log.debug(
+                f"Check for last updated data (iteration={count}) on PID={os.getpid()}"
+            )
+            _, timestamp = self.span_db.get_last_updated_span_uid()  # TODO
+            if timestamp and timestamp > timestamp_last_update:
+                timestamp_last_update = timestamp
+                tree_json = await self.get_full_span_tree_json()
+                try:
+                    await websocket.send_text(tree_json)
+                except ConnectionClosedError:
+                    break
+            await asyncio.sleep(1)
+        log.debug(f"{self._websocket_active=!r}")
+        # Try sending last data
+        try:
+            tree_json = await self.get_full_span_tree_json()
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.send_text(tree_json)
+        except Exception as exc:
+            log.warning(f"Client disconnected: {exc}")
+        await websocket.close()
+
+    async def get_full_span_tree_json(self) -> str:
+        """Get full tree as JSON string."""
+        dict_tree = await self.get_full_span_tree()
+        tree_json = json.dumps(
+            dict_tree,
+            cls=AnyEncoder,
+            separators=(",", ":"),
+        )
+        tree_json = html.escape(tree_json, quote=False)
+        return tree_json
+
+    async def get_full_span_tree(self) -> dict[str, Any]:
+        root_uids = self.span_db.get_root_uids()
+        if len(root_uids) == 0:
+            return {}
+        root = TraceTreeSqlite(span_db=self.span_db, span_uid=root_uids[-1])
+        return trace_tree_to_dict(root)
+
+    async def _export_html(self) -> None:
+        """Export the trace tree as stand-alone HTML file."""
+        if self.export_html_path is not None:
+            dict_tree = await self.get_full_span_tree()
+            self.export_html_path.write_text(get_flamechart_view(data_dict=dict_tree))
+
+    @contextlib.asynccontextmanager
+    async def lifespan(self, app: FastAPI) -> AsyncIterator[None]:
+        """
+        ASGI lifespan event handler.
+
+        - https://fastapi.tiangolo.com/advanced/events/
+        - https://asgi.readthedocs.io/en/latest/specs/lifespan.html
+        """
+        log.debug(f"{self.__class__.__name__}.lifespan()")
+        # Install signal handlers to interrupt websocket loop
+        signal.signal(signal.SIGTERM, self.stop_server)
+        signal.signal(signal.SIGINT, self.stop_server)
+        log.debug(f"Installed signal handlers on PID={os.getpid()}")
+        yield
+        log.debug(f"Shutdown server on PID={os.getpid()}")
+        # On shutdown is only run after all connections are closed
+        self._websocket_active = False
+        self.span_db.wal_checkpoint()
+        log.debug(f"Checkpointed WAL on PID={os.getpid()}")
+        await self._export_html()
+
+    def stop_server(self, sig_num: int, *args, **kwargs) -> None:
+        self._websocket_active = False
+
+    def get_router(self) -> APIRouter:
+        """
+        Returns a router with the span server HTTP API endpoints.
+        Database backed server.
+        To be included in a FastAPI app.
+        """
+        router = APIRouter()
+        router.add_api_route("/", self.view, methods=["GET"])
+        router.add_websocket_route(self.websocket_path, self.websocket_endpoint)
+        return router
+
+    @classmethod
+    def create_app(
+        cls,
+        span_db: SpanDataBase,
+        host: str,
+        port: int,
+        websocket_path: str = WEBSOCKET_PATH,
+        readiness_path: str = READINESS_ENDPOINT_PATH,
+        export_html_path: Path | None = None,
+        log_dir: Path | None = None,
+        log_level: int = logging.INFO,
+    ) -> FastAPI:
+        """
+        Returns a FastAPI app with the span server HTTP API endpoints.
+        Database backed server.
+        """
+        setup_logging(log_dir=log_dir, log_level=log_level)
+        api = cls(
+            span_db=span_db,
+            host=host,
+            port=port,
+            websocket_path=websocket_path,
+            export_html_path=export_html_path,
+        )
+        app = FastAPI(lifespan=api.lifespan)
+        app.mount(STATIC_PATH, StaticNoCache(directory=STATIC_FILES_DIR), name="static")
+        app.add_api_route(readiness_path, readiness, methods=["GET"])
+        app.include_router(api.get_router())
+        log.debug(f"FastAPI app created: {app=!r} on PID={os.getpid()}")
+        return app
+
+
+def create_view_server(
+    db_path: Path, export_html_path: Path | None, **server_kwargs
+) -> FastAPIProcessRunner:
+    log.info(f"Create view server with db_path={db_path}")
+    log_level = server_kwargs.pop("log_level", logging.INFO)
+    span_db = SpanDataBase(db_path=db_path)
+    create_app = functools.partial(
+        ViewServerAPI.create_app,
+        span_db=span_db,
+        websocket_path=WEBSOCKET_PATH,
+        readiness_path=READINESS_ENDPOINT_PATH,
+        export_html_path=export_html_path,
+        log_level=log_level,
+        log_dir=db_path.parent,
+    )
+    log.debug(f"Return FastAPIProcessRunner with {create_app=!r}")
+    return FastAPIProcessRunner(create_app=create_app, **server_kwargs)
+
+
+def trace_tree_to_dict(trace_tree: TraceTree) -> dict[str, Any]:
+    return {
+        "name": trace_tree.name,
+        "data": trace_tree.data,
+        "children": [trace_tree_to_dict(child) for child in trace_tree.children],
+    }
 
 
 class StaticNoCache(StaticFiles):
@@ -151,6 +249,20 @@ class StaticNoCache(StaticFiles):
         return resp
 
 
-class ServerNoSignalHandler(uvicorn.Server):
-    def install_signal_handlers(self):
-        pass
+def setup_logging(
+    log_dir: Path | None = None,
+    log_level: int = logging.INFO,
+) -> None:
+    if log_dir is not None:
+        log.debug(f"Setup logging to {log_dir}, {log_level=}")
+        log_dir = log_dir.expanduser().resolve()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(str(log_dir / "view_server.log"))
+        file_handler.setFormatter(
+            logging.Formatter(
+                fmt="# %(levelname)s: %(asctime)s :: %(name)s.%(funcName)s:%(lineno)d\n  %(message)s"
+            )
+        )
+        file_handler.setLevel(log_level)
+        # Add file handler to root logger
+        logging.getLogger().addHandler(file_handler)

@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from context_tracer.utils.json_encoder import JSONDictType
 
+log = logging.getLogger(__name__)
+
 
 class SpanDbRow(BaseModel):
     """Representation of a row in the database table."""
@@ -36,7 +38,6 @@ DATA_KEY: Final[str] = "data_json"
 UPDATED_TIME_KEY: Final[str] = "timestamp_last_updated"
 
 
-# TODO: Test if this is serializable
 class SpanDataBase:
     """
     Database for storing spans.
@@ -45,13 +46,16 @@ class SpanDataBase:
     db_path: Path
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path.resolve()
+        self.db_path = db_path.expanduser().resolve()
         self.init_db()
 
     @contextlib.contextmanager
     def connect_db(self) -> Iterator[sqlite3.Connection]:
-        with sqlite3.connect(str(self.db_path)) as conn:
-            yield conn
+        try:
+            with sqlite3.connect(str(self.db_path), isolation_level=None) as conn:
+                yield conn
+        except sqlite3.Error as exc:
+            log.exception(f"Error connecting to database {self.db_path!r}: {exc}")
 
     @contextlib.contextmanager
     def cursor(self) -> Iterator[sqlite3.Cursor]:
@@ -92,7 +96,6 @@ class SpanDataBase:
         END;
         """
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        logging.debug("Initializing database...")
         with self.cursor() as cursor:
             # Set Write-Ahead Logging (WAL) mode to enable concurrent reads and writes
             # https://www.sqlite.org/wal.html
@@ -102,7 +105,15 @@ class SpanDataBase:
             cursor.execute(CREATE_TIMESTAMP_UPDATE_TRIGGER_SQL)
             cursor.connection.commit()
         assert self.db_path.exists()
-        logging.info(f"Database initialized at {self.db_path!r}.")
+        log.info(f"Database initialized at {self.db_path!r}.")
+
+    def wal_checkpoint(self) -> None:
+        """
+        Checkpoint the Write-Ahead Log (WAL) to the database file.
+        """
+        with self.cursor() as cursor:
+            cursor.execute("PRAGMA wal_checkpoint(FULL);")
+            cursor.connection.commit()
 
     def insert(
         self,
@@ -245,7 +256,7 @@ class SpanDataBase:
             rows = cursor.fetchall()
         return [row[0] for row in rows]
 
-    def get_last_span_uid(self) -> bytes:
+    def get_last_span_uid(self) -> bytes | None:
         """
         Get the uid of the last span in the database table.
 
@@ -257,10 +268,11 @@ class SpanDataBase:
         with self.cursor() as cursor:
             cursor.execute(GET_LAST_SPAN_UID_SQL)
             row = cursor.fetchone()
-        assert row is not None, "No spans in database."
-        return row[0]
+        if row is not None:
+            return row[0]
+        return None  # No spans in database yet
 
-    def get_last_updated_span_uid(self) -> tuple[bytes, float]:
+    def get_last_updated_span_uid(self) -> tuple[bytes | None, float | None]:
         """
         Get the uid of the last span in the database table.
         """
@@ -268,5 +280,6 @@ class SpanDataBase:
         with self.cursor() as cursor:
             cursor.execute(GET_LAST_UPDATED_SPAN_UID_SQL)
             row = cursor.fetchone()
-        assert row is not None, "No spans in database."
-        return row[0], row[1]
+        if row is not None:
+            return row[0], row[1]
+        return None, None  # No spans in database yet

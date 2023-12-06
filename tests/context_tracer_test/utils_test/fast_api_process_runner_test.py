@@ -30,21 +30,22 @@ def multiprocess_start_method(start_method: str) -> Iterator[None]:
         mp.set_start_method(prev_start_method, force=True)
 
 
-def create_simple_app() -> FastAPI:
+def create_simple_app(queue: Queue, host: str, port: int) -> FastAPI:
     app = FastAPI()
 
     async def live() -> Response:
+        nonlocal queue
+        queue.put_nowait((host, port))
         return Response(content="ok", status_code=HTTPStatus.OK)
 
     app.add_api_route(LIVENESS_ENDPOINT, live, methods=["GET"])
     return app
 
 
-def create_lifespan_app(queue: Queue) -> FastAPI:
+def create_lifespan_app(queue: Queue, **kwargs) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal queue
-        # Load the ML model
         queue.put_nowait("on-start")
         yield
         queue.put_nowait("on-shutdown")
@@ -65,7 +66,11 @@ def create_lifespan_app(queue: Queue) -> FastAPI:
 def test_trace_server(mp_start_method: str) -> None:
     with multiprocess_start_method(mp_start_method):
         proc = None
-        with FastAPIProcessRunner(create_app=create_simple_app) as server:
+        ctx = mp.get_context()
+        assert ctx.get_start_method() == mp_start_method
+        queue = ctx.Manager().Queue()
+        create_app = functools.partial(create_simple_app, queue=queue)
+        with FastAPIProcessRunner(create_app=create_app) as server:
             proc = server._proc
             assert proc is not None
             assert proc.is_alive()
@@ -76,6 +81,7 @@ def test_trace_server(mp_start_method: str) -> None:
             resp = requests.get(liveness_url)
             assert resp.status_code == 200
             assert resp.text == "ok"
+            assert queue.get() == (server.host, server.port)
         # Server should be stopped
         assert not proc.is_alive()
         assert server._proc is None

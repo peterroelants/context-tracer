@@ -13,6 +13,9 @@ def test_trace_remote(tmp_db_path: Path) -> None:
         assert isinstance(tracing, Tracing)
         assert tracing.root_span is not None
         assert isinstance(tracing.root_span, TraceSpan)
+        # Check API client
+        assert tracing._api_client is not None
+        assert tracing._api_client.is_ready()
     assert tracing.tree is not None
     assert isinstance(tracing.tree, TraceTree)
 

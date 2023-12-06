@@ -1,8 +1,8 @@
 import logging
 import multiprocessing as mp
+import os
 import socket
 from abc import abstractmethod
-from collections.abc import Callable
 from types import TracebackType
 from typing import Any, Protocol, Self, runtime_checkable
 
@@ -10,6 +10,11 @@ import uvicorn
 from fastapi import FastAPI
 
 log = logging.getLogger(__name__)
+
+
+class CreateAppType(Protocol):
+    def __call__(self, host: str, port: int) -> FastAPI:
+        ...
 
 
 @runtime_checkable
@@ -50,17 +55,18 @@ class FastAPIProcessRunner(ServerContextProtocol):
     _proc: mp.Process | None = None
     _url: str | None = None
     # Function to create the FastAPI application (needed to avoid FastAPI pickling issues)
-    _create_app: Callable[[], FastAPI]
+    _create_app: CreateAppType
     _uvicorn_server_kwargs: dict[str, Any]
 
     def __init__(
         self,
-        create_app: Callable[[], FastAPI],
+        create_app: CreateAppType,
         host: str = "localhost",
         port: int = 0,
         # Extra kwargs are passed to `uvicorn.Config` used to create the uvicorn Server.
         **server_kwargs: dict[str, Any],
     ):
+        log.debug(f"{self.__class__.__name__}({host=}, {port=})")
         self.host = host
         self.port = port
         self._create_app = create_app
@@ -75,16 +81,19 @@ class FastAPIProcessRunner(ServerContextProtocol):
         """
         Run the server in the current process.
         """
-        app = self._create_app()
+        log.debug(f"{self.__class__.__name__}._run({sockets=}) on PID={os.getpid()}")
+        app = self._create_app(host=self.host, port=self.port)
         server = uvicorn.Server(
             config=uvicorn.Config(app, **self._uvicorn_server_kwargs)
         )
+        log.debug(f"Starting server on {self.host}:{self.port} on PID={os.getpid()}")
         server.run(sockets=sockets)
 
     def start(self) -> None:
         """
         Start the Trace server in a new process and return the URL.
         """
+        log.debug(f"{self.__class__.__name__}.start()")
         if self._proc is not None and self._proc.is_alive():
             raise RuntimeError("Server already started!")
         # Setup socket separately to get the actual port assigned (in case port=0 was used)
@@ -100,6 +109,7 @@ class FastAPIProcessRunner(ServerContextProtocol):
             daemon=True,
         )
         self._proc.start()
+        log.info(f"Started server with PID={self._proc.pid} on {self.host}:{self.port}")
         self._url = f"http://{self.host}:{self.port}"
         log.debug(f"Trace Server started on url={self.url!r}.")
 
@@ -107,6 +117,7 @@ class FastAPIProcessRunner(ServerContextProtocol):
         """
         Stop the process running the webserver.
         """
+        log.debug(f"{self.__class__.__name__}.stop({timeout_sec=})")
         self._url = None
         try:
             if self._proc and self._proc.is_alive():
@@ -128,8 +139,10 @@ class FastAPIProcessRunner(ServerContextProtocol):
         log.info("Webserver finished")
 
     def __enter__(self: Self) -> Self:
+        log.debug(f"{self.__class__.__name__}.__enter__()")
         self.start()
         return self
 
     def __exit__(self, *args, **kwargs) -> None:
+        log.debug(f"{self.__class__.__name__}.__exit__({args=}, {kwargs=})")
         self.stop()

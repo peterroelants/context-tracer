@@ -25,10 +25,10 @@ log = logging.getLogger(__name__)
 
 
 # TODO: Proper HTTP endpoints all using ID in path
-READINESS_ENDPOINT: Final[str] = "/api/status/ready"
-SPAN_ENDPOINT: Final[str] = "/api/span/{span_uid}"
-SPAN_CHILDREN_ENDPOINT: Final[str] = "/api/span/{span_uid}/children"
-ROOT_SPAN_IDS_ENDPOINT: Final[str] = "/api/tracing/root"
+READINESS_ENDPOINT_PATH: Final[str] = "/api/status/ready"
+SPAN_ENDPOINT_PATH: Final[str] = "/api/span/{span_uid}"
+SPAN_CHILDREN_ENDPOINT_PATH: Final[str] = "/api/span/{span_uid}/children"
+ROOT_SPAN_IDS_ENDPOINT_PATH: Final[str] = "/api/tracing/root"
 
 
 async def readiness() -> Response:
@@ -139,12 +139,12 @@ class SpanClientAPI:
                 raise TimeoutError("Timed out waiting for server to be ready.")
 
     def is_ready(self) -> bool:
-        resp = requests.get(f"{self.url}{READINESS_ENDPOINT}")
+        resp = requests.get(f"{self.url}{READINESS_ENDPOINT_PATH}")
         return resp.status_code == HTTPStatus.OK
 
     def get_span(self, uid: bytes) -> SpanDict:
         span_uid = SpanPayload.uid_to_str(uid)
-        resp = requests.get(f"{self.url}{SPAN_ENDPOINT.format(span_uid=span_uid)}")
+        resp = requests.get(f"{self.url}{SPAN_ENDPOINT_PATH.format(span_uid=span_uid)}")
         resp.raise_for_status()
         resp_json: SpanPayloadDict = resp.json()
         span_dict: SpanDict = dict(
@@ -170,7 +170,7 @@ class SpanClientAPI:
             parent_uid=parent_uid,
         )
         resp = requests.put(
-            f"{self.url}{SPAN_ENDPOINT.format(span_uid=span_uid)}",
+            f"{self.url}{SPAN_ENDPOINT_PATH.format(span_uid=span_uid)}",
             json=request_payload.model_dump(),
         )
         resp.raise_for_status()
@@ -179,7 +179,7 @@ class SpanClientAPI:
         span_uid = SpanPayload.uid_to_str(uid)
         request_payload = SpanDataPayload(data_json=json.dumps(data, cls=AnyEncoder))
         resp = requests.patch(
-            f"{self.url}{SPAN_ENDPOINT.format(span_uid=span_uid)}",
+            f"{self.url}{SPAN_ENDPOINT_PATH.format(span_uid=span_uid)}",
             json=request_payload.model_dump(),
         )
         resp.raise_for_status()
@@ -187,13 +187,13 @@ class SpanClientAPI:
     def get_children_uids(self, uid: bytes) -> list[bytes]:
         span_uid = SpanPayload.uid_to_str(uid)
         resp = requests.get(
-            f"{self.url}{SPAN_CHILDREN_ENDPOINT.format(span_uid=span_uid)}"
+            f"{self.url}{SPAN_CHILDREN_ENDPOINT_PATH.format(span_uid=span_uid)}"
         )
         resp.raise_for_status()
         return [SpanPayload.uid_to_bytes(child_uid) for child_uid in resp.json()]
 
     def get_root_span_ids(self) -> list[bytes]:
-        resp = requests.get(f"{self.url}{ROOT_SPAN_IDS_ENDPOINT}")
+        resp = requests.get(f"{self.url}{ROOT_SPAN_IDS_ENDPOINT_PATH}")
         resp.raise_for_status()
         return [SpanPayload.uid_to_bytes(uid) for uid in resp.json()]
 
@@ -241,8 +241,8 @@ class SpanServerAPI:
     def get_span_server_router(
         cls,
         span_db: SpanDataBase,
-        span_api_path: str = SPAN_ENDPOINT,
-    ) -> APIRouter:
+        span_api_path: str = SPAN_ENDPOINT_PATH,
+    ) -> APIRouter:  # TODO: WHy not return FastAPI app?
         """
         Returns a router with the span server HTTP API endpoints.
         Database backed server.
@@ -256,16 +256,40 @@ class SpanServerAPI:
             span_api_path, api.get_span, methods=["GET"], response_model=SpanPayload
         )
         router.add_api_route(
-            SPAN_CHILDREN_ENDPOINT, api.get_children_ids, methods=["GET"]
+            SPAN_CHILDREN_ENDPOINT_PATH, api.get_children_ids, methods=["GET"]
         )
         router.add_api_route(
-            ROOT_SPAN_IDS_ENDPOINT, api.get_root_span_ids, methods=["GET"]
+            ROOT_SPAN_IDS_ENDPOINT_PATH, api.get_root_span_ids, methods=["GET"]
         )
         return router
 
+    @classmethod
+    def create_span_server_app(
+        cls,
+        span_db: SpanDataBase,
+        span_api_path: str = SPAN_ENDPOINT_PATH,
+        **kwargs,  # TODO
+    ) -> FastAPI:
+        """
+        Returns a FastAPI app with the span server HTTP API endpoints.
+        Database backed server.
+        """
+        router = cls.get_span_server_router(
+            span_db=span_db, span_api_path=span_api_path
+        )
+        app = FastAPI()
+        app.add_api_route(READINESS_ENDPOINT_PATH, readiness, methods=["GET"])
+        app.include_router(router)
+        return app
+
 
 def create_span_server(db_path: Path, **server_kwargs) -> FastAPIProcessRunner:
-    create_app = functools.partial(_create_span_app, db_path=db_path)
+    span_db = SpanDataBase(db_path=db_path)
+    create_app = functools.partial(
+        SpanServerAPI.create_span_server_app,
+        span_db=span_db,
+        span_api_path=SPAN_ENDPOINT_PATH,
+    )
     return FastAPIProcessRunner(create_app=create_app, **server_kwargs)
 
 
@@ -274,15 +298,3 @@ def running_server(db_path: Path, **server_kwargs) -> Iterator[FastAPIProcessRun
     server = create_span_server(db_path=db_path, **server_kwargs)
     with server:
         yield server
-
-
-def _create_span_app(db_path: Path) -> FastAPI:
-    """
-    Create a FastAPI app with the db-backed span server endpoints.
-    """
-    span_db = SpanDataBase(db_path=db_path)
-    app = FastAPI()
-    db_router = SpanServerAPI.get_span_server_router(span_db=span_db)
-    app.add_api_route(READINESS_ENDPOINT, readiness, methods=["GET"])
-    app.include_router(db_router)
-    return app
