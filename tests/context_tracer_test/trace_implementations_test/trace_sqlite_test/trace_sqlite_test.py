@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 from context_tracer.trace import get_current_span_safe, log_with_trace, trace
-from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
 from context_tracer.trace_implementations.trace_sqlite import (
     TraceSpanSqlite,
     TraceTreeSqlite,
     TracingSqlite,
 )
+from context_tracer.trace_types import TraceSpan, TraceTree, Tracing
 
 
 @pytest.fixture

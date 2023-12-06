@@ -1,3 +1,4 @@
+import logging
 import tempfile
 import uuid
 from pathlib import Path
@@ -7,19 +8,12 @@ import pytest
 import requests
 from bs4 import BeautifulSoup
 from context_tracer.trace import log_with_trace, trace
-from context_tracer.trace_context import (
+from context_tracer.trace_types import (
     TraceSpan,
     TraceTree,
     Tracing,
 )
 from context_tracer.tracing_viewer.tracer_with_view import TracingWithViewer
-
-
-@pytest.fixture
-def tmp_db_path() -> Iterator[Path]:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        db_path = Path(tmp_dir) / "trace.db"
-        yield db_path
 
 
 @pytest.fixture
@@ -29,9 +23,13 @@ def tmp_html_export_path() -> Iterator[Path]:
         yield html_path
 
 
-def test_tracing_with_viewer(tmp_db_path: Path, tmp_html_export_path: Path) -> None:
+def test_tracing_with_viewer(
+    tmp_db_path: Path, tmp_log_path: Path, tmp_html_export_path: Path
+) -> None:
     with TracingWithViewer(
         db_path=tmp_db_path,
+        log_path=tmp_log_path,
+        log_level=logging.DEBUG,
         export_html_path=tmp_html_export_path,
     ) as tracing:
         pass  # Just root context
@@ -43,6 +41,7 @@ def test_tracing_with_viewer(tmp_db_path: Path, tmp_html_export_path: Path) -> N
         response = requests.get(tracing.url)
         assert response.status_code == 200
     assert tmp_db_path.exists()
+    assert tmp_log_path.exists()
     assert tmp_html_export_path.exists()
     assert tracing.tree is not None
     assert isinstance(tracing.tree, TraceTree)

@@ -1,14 +1,17 @@
+import logging
 from pathlib import Path
 
 from context_tracer.trace import get_current_span_safe, log_with_trace, trace
-from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
 from context_tracer.trace_implementations.trace_server.tracer_remote import (
     TracingRemote,
 )
+from context_tracer.trace_types import TraceSpan, TraceTree, Tracing
 
 
-def test_trace_remote(tmp_db_path: Path) -> None:
-    with TracingRemote(db_path=tmp_db_path) as tracing:
+def test_trace_remote(tmp_db_path: Path, tmp_log_path: Path) -> None:
+    with TracingRemote(
+        db_path=tmp_db_path, log_path=tmp_log_path, log_level=logging.DEBUG
+    ) as tracing:
         pass  # Just root context
         assert isinstance(tracing, Tracing)
         assert tracing.root_span is not None
@@ -16,6 +19,8 @@ def test_trace_remote(tmp_db_path: Path) -> None:
         # Check API client
         assert tracing._api_client is not None
         assert tracing._api_client.is_ready()
+    assert tmp_db_path.exists()
+    assert tmp_log_path.exists()
     assert tracing.tree is not None
     assert isinstance(tracing.tree, TraceTree)
 

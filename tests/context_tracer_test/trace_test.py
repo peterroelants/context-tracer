@@ -13,14 +13,14 @@ from context_tracer.constants import (
     FUNCTION_RETURNED_KEY,
 )
 from context_tracer.trace import trace
-from context_tracer.trace_context import (
-    TraceSpan,
-    get_current_span,
-    get_current_span_safe_typed,
-)
 from context_tracer.trace_implementations.trace_basic import (
     TraceSpanInMemory,
     TracingInMemory,
+)
+from context_tracer.trace_types import (
+    TraceSpan,
+    get_current_span,
+    get_current_span_safe_typed,
 )
 
 logger = logging.getLogger(__name__)

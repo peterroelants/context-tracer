@@ -181,6 +181,8 @@ dependencies:
       - filelock==3.13.1
       - identify==2.5.31
       - iniconfig==2.0.0
+      - jsonpatch==1.33
+      - jsonpointer==2.4
       - markdown-it-py==3.0.0
       - mdurl==0.1.2
       - mypy==1.6.1

@@ -1,9 +1,9 @@
 import logging
 from typing import Any, Optional
 
-from context_tracer.constants import END_TIME_KEY, NAME_KEY, START_TIME_KEY
-from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
-from context_tracer.utils.time_utils import get_local_timestamp
+from context_tracer.constants import NAME_KEY
+from context_tracer.trace_types import TraceSpan, TraceTree, Tracing
+from context_tracer.utils.merge_patch import merge_patch
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,7 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
         return child
 
     def update_data(self, **new_data) -> None:
-        # TODO: Recursive update?
-        self._data.update(new_data)
+        self._data = merge_patch(self._data, new_data)
 
     @property
     def uid(self) -> bytes:
@@ -69,17 +68,6 @@ class TraceSpanInMemory(TraceSpan, TraceTree):
     @property
     def children(self) -> list["TraceSpanInMemory"]:
         return self._children
-
-    # TODO: Move timing to `trace` implementation
-    def __enter__(self) -> "TraceSpanInMemory":
-        start_time = get_local_timestamp().isoformat(sep=" ", timespec="seconds")
-        self.update_data(**{START_TIME_KEY: start_time})
-        return self
-
-    def __exit__(self, *exc) -> None:
-        end_time = get_local_timestamp().isoformat(sep=" ", timespec="seconds")
-        self.update_data(**{END_TIME_KEY: end_time})
-        return None
 
 
 class TracingInMemory(Tracing[TraceSpanInMemory, TraceSpanInMemory]):

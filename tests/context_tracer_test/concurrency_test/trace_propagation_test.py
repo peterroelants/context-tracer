@@ -13,14 +13,14 @@ from context_tracer.concurrency import (
     TraceThreadPoolExecutor,
 )
 from context_tracer.trace import trace
-from context_tracer.trace_context import (
+from context_tracer.trace_implementations.trace_basic import (
+    TraceSpanInMemory,
+)
+from context_tracer.trace_types import (
     TraceSpan,
     get_current_span,
     get_current_span_safe,
     trace_span_context,
-)
-from context_tracer.trace_implementations.trace_basic import (
-    TraceSpanInMemory,
 )
 
 logger = logging.getLogger(__name__)

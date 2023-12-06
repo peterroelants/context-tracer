@@ -1,4 +1,5 @@
 import contextlib
+import contextvars
 import functools
 import multiprocessing
 import threading
@@ -8,7 +9,7 @@ from multiprocessing import Process
 from threading import Thread
 from typing import ParamSpec, TypeVar
 
-from context_tracer.trace_types import TraceSpan, get_current_span, trace_span_context
+# TODO: Test this
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -30,7 +31,7 @@ def patch_threading() -> Iterator[None]:
     """
     orig_thread = threading.Thread
     try:
-        threading.Thread = TraceThread  # type: ignore
+        threading.Thread = CtxThread  # type: ignore
         yield
     finally:
         threading.Thread = orig_thread  # type: ignore
@@ -43,69 +44,45 @@ def patch_multiprocessing() -> Iterator[None]:
     """
     orig_process = multiprocessing.Process
     try:
-        multiprocessing.Process = TraceProcess  # type: ignore
+        multiprocessing.Process = CtxProcess  # type: ignore
         yield
     finally:
         multiprocessing.Process = orig_process  # type: ignore
 
 
-class TraceThread(Thread):
+class CtxThread(Thread):
     """
     Thread with trace context propagation.
     """
 
-    _parent_span: TraceSpan | None = None
-
-    def start(self) -> None:
-        """
-        Start thread with context propagation.
-        """
-        self._parent_span = get_current_span()
-        super().start()
-
     def run(self) -> None:
         """
         Run target with context propagation.
 
         This is called in the child process.
         """
-        if self._parent_span is None:
-            return super().run()
+        ctx = contextvars.copy_context()
         with patch_concurrency():
-            with trace_span_context(self._parent_span):
-                super().run()
+            ctx.run(super().run)
 
 
-class TraceProcess(Process):
+class CtxProcess(Process):
     """
     Process with context propagation.
     """
 
-    _parent_span: TraceSpan | None = None
-
-    def start(self) -> None:
-        """
-        Start process with context propagation.
-
-        This is called in the parent process.
-        """
-        self._parent_span = get_current_span()
-        super().start()
-
     def run(self) -> None:
         """
         Run target with context propagation.
 
         This is called in the child process.
         """
-        if self._parent_span is None:
-            return super().run()
+        ctx = contextvars.copy_context()
         with patch_concurrency():
-            with trace_span_context(self._parent_span):
-                super().run()
+            ctx.run(super().run)
 
 
-class TraceThreadPoolExecutor(ThreadPoolExecutor):
+class CtxThreadPoolExecutor(ThreadPoolExecutor):
     """
     ThreadPoolExecutor with context propagation.
     """
@@ -116,13 +93,11 @@ class TraceThreadPoolExecutor(ThreadPoolExecutor):
         """
         Submit target in context.
         """
-        parent_span = get_current_span()
-        if parent_span is not None:
-            fn = functools.partial(run_in_span, parent_span, fn)
+        fn = functools.partial(run_in_context, fn)
         return super().submit(fn, *args, **kwargs)
 
 
-class TraceProcessPoolExecutor(ProcessPoolExecutor):
+class CtxProcessPoolExecutor(ProcessPoolExecutor):
     """
     ThreadPoolExecutor with context propagation.
     """
@@ -133,21 +108,17 @@ class TraceProcessPoolExecutor(ProcessPoolExecutor):
         """
         Submit target in context.
         """
-        parent_span = get_current_span()
-        if parent_span is not None:
-            fn = functools.partial(run_in_span, parent_span, fn)
+        fn = functools.partial(run_in_context, fn)
         return super().submit(fn, *args, **kwargs)
 
 
-def run_in_span(
-    span: TraceSpan, target: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs
-) -> R:
+def run_in_context(target: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs) -> R:
     """
     Run target in span context.
 
     Cannot be a function decorator because the embedded wrapper function would not be picklable for multiprocessing.
     Needs to be applied via functools.partial.
     """
+    ctx = contextvars.copy_context()
     with patch_concurrency():
-        with trace_span_context(span):
-            return target(*args, **kwargs)
+        return ctx.run(target, *args, **kwargs)

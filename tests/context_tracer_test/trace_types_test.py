@@ -1,7 +1,11 @@
 import logging
 
 import pytest
-from context_tracer.trace_context import (
+from context_tracer.trace_implementations.trace_basic import (
+    TraceSpanInMemory,
+    TracingInMemory,
+)
+from context_tracer.trace_types import (
     TraceError,
     TraceSpan,
     Tracing,
@@ -9,10 +13,6 @@ from context_tracer.trace_context import (
     get_current_span_safe,
     get_current_span_safe_typed,
     trace_span_context,
-)
-from context_tracer.trace_implementations.trace_basic import (
-    TraceSpanInMemory,
-    TracingInMemory,
 )
 
 logger = logging.getLogger(__name__)

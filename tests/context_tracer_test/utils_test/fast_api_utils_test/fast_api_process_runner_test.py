@@ -9,14 +9,15 @@ from typing import Iterator
 
 import pytest
 import requests
-from context_tracer.utils.fast_api_process_runner import FastAPIProcessRunner
+from context_tracer.utils.fast_api_utils import FastAPIProcessRunner
+from context_tracer.utils.fast_api_utils.readiness import (
+    READINESS_ENDPOINT_PATH,
+    readiness_api,
+)
 from fastapi import FastAPI
 from fastapi.responses import Response
 
 log = logging.getLogger(__name__)
-
-
-LIVENESS_ENDPOINT = "/live"
 
 
 @contextlib.contextmanager
@@ -38,7 +39,7 @@ def create_simple_app(queue: Queue, host: str, port: int) -> FastAPI:
         queue.put_nowait((host, port))
         return Response(content="ok", status_code=HTTPStatus.OK)
 
-    app.add_api_route(LIVENESS_ENDPOINT, live, methods=["GET"])
+    app.add_api_route(READINESS_ENDPOINT_PATH, live, methods=["GET"])
     return app
 
 
@@ -51,11 +52,7 @@ def create_lifespan_app(queue: Queue, **kwargs) -> FastAPI:
         queue.put_nowait("on-shutdown")
 
     app = FastAPI(lifespan=lifespan)
-
-    async def live() -> Response:
-        return Response(content="ok", status_code=HTTPStatus.OK)
-
-    app.add_api_route(LIVENESS_ENDPOINT, live, methods=["GET"])
+    app.add_api_route(READINESS_ENDPOINT_PATH, readiness_api, methods=["GET"])
     return app
 
 
@@ -77,7 +74,7 @@ def test_trace_server(mp_start_method: str) -> None:
             assert server._proc is not None
             assert server._proc.is_alive()
             assert server.url is not None
-            liveness_url = f"{server.url}{LIVENESS_ENDPOINT}"
+            liveness_url = f"{server.url}{READINESS_ENDPOINT_PATH}"
             resp = requests.get(liveness_url)
             assert resp.status_code == 200
             assert resp.text == "ok"
@@ -104,7 +101,7 @@ def test_trace_server_lifespan(
         create_app = functools.partial(create_lifespan_app, queue=queue)
         with FastAPIProcessRunner(create_app=create_app) as server:
             assert queue.get() == "on-start"
-            resp = requests.get(f"{server.url}{LIVENESS_ENDPOINT}")
+            resp = requests.get(f"{server.url}{READINESS_ENDPOINT_PATH}")
             assert resp.status_code == 200
             assert resp.text == "ok"
         assert queue.get() == "on-shutdown"

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Final, Self
 
 from context_tracer.constants import DATA_KEY, NAME_KEY
-from context_tracer.trace_context import TraceSpan, Tracing
 from context_tracer.trace_implementations.trace_server.trace_server import (
     FastAPIProcessRunner,
     SpanClientAPI,
@@ -14,6 +13,7 @@ from context_tracer.trace_implementations.trace_server.trace_server import (
 from context_tracer.trace_implementations.trace_sqlite.tracer_sqlite import (
     TraceTreeSqlite,
 )
+from context_tracer.trace_types import TraceSpan, Tracing
 from context_tracer.utils.id_utils import new_uid
 
 log = logging.getLogger(__name__)
@@ -91,12 +91,14 @@ class TracingRemote(Tracing[TraceSpanRemote, TraceTreeSqlite]):
     _api_client: SpanClientAPI | None = None
     _root_uid: bytes | None
     _server_kwargs: dict[str, Any]
+    _log_path: Path | None
 
     def __init__(
         self,
         db_path: Path,
         name: str = "root",
         root_uid: bytes | None = None,
+        log_path: Path | None = None,
         **server_kwargs,
     ) -> None:
         log.debug(f"TracingRemote(db_path={db_path}, name={name})")
@@ -104,6 +106,7 @@ class TracingRemote(Tracing[TraceSpanRemote, TraceTreeSqlite]):
         self._root_name = name
         self._root_uid = root_uid
         self._server_kwargs = server_kwargs
+        self._log_path = log_path
 
     @property
     def span_db_path(self) -> Path:
@@ -124,7 +127,9 @@ class TracingRemote(Tracing[TraceSpanRemote, TraceTreeSqlite]):
     def __enter__(self: Self) -> Self:
         """Start a new tracing."""
         self._server: FastAPIProcessRunner = create_span_server(
-            db_path=self.span_db.db_path, **self._server_kwargs
+            db_path=self.span_db.db_path,
+            log_path=self._log_path,
+            **self._server_kwargs,
         )
         self._server.__enter__()
         self._api_client = SpanClientAPI(url=self._server.url)

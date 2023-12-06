@@ -1,9 +1,9 @@
 from context_tracer.trace import log_with_trace, trace
-from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
 from context_tracer.trace_implementations.trace_basic import (
     TraceSpanInMemory,
     TracingInMemory,
 )
+from context_tracer.trace_types import TraceSpan, TraceTree, Tracing
 
 
 def test_trace_simple() -> None:

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Final, Self
 
 from context_tracer.constants import NAME_KEY
-from context_tracer.trace_context import TraceSpan, TraceTree, Tracing
+from context_tracer.trace_types import TraceSpan, TraceTree, Tracing
 from context_tracer.utils.id_utils import new_uid
 from context_tracer.utils.json_encoder import AnyEncoder, JSONDictType
 

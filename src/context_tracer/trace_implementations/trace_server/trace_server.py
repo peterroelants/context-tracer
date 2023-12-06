@@ -1,11 +1,10 @@
-import contextlib
 import functools
 import json
 import logging
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Final, Iterator, Self, TypedDict
+from typing import Any, Final, Self, TypedDict
 
 import requests
 from fastapi import APIRouter, FastAPI
@@ -15,30 +14,27 @@ from pydantic import BaseModel
 from context_tracer.trace_implementations.trace_sqlite.span_db import (
     SpanDataBase,
 )
-from context_tracer.utils.fast_api_process_runner import (
+from context_tracer.utils.fast_api_utils import (
     FastAPIProcessRunner,
+)
+from context_tracer.utils.fast_api_utils.readiness import (
+    READINESS_ENDPOINT_PATH,
+    readiness_api,
 )
 from context_tracer.utils.id_utils import uid_to_bytes, uid_to_str
 from context_tracer.utils.json_encoder import AnyEncoder
+from context_tracer.utils.logging_utils import setup_logging
 
 log = logging.getLogger(__name__)
 
 
-# TODO: Proper HTTP endpoints all using ID in path
-READINESS_ENDPOINT_PATH: Final[str] = "/api/status/ready"
 SPAN_ENDPOINT_PATH: Final[str] = "/api/span/{span_uid}"
 SPAN_CHILDREN_ENDPOINT_PATH: Final[str] = "/api/span/{span_uid}/children"
 ROOT_SPAN_IDS_ENDPOINT_PATH: Final[str] = "/api/tracing/root"
 
 
-async def readiness() -> Response:
-    """Readiness check endpoint."""
-    return Response(content="ok", status_code=HTTPStatus.OK)
-
-
 # Types ############################################################
 class SpanDict(TypedDict):
-    # TODO: More general?
     uid: bytes
     name: str
     data: dict[str, Any]
@@ -118,9 +114,6 @@ class SpanPayload(SpanDataPayload):
 class SpanClientAPI:
     """Client API for Span server."""
 
-    # TODO: Async?
-    # TODO: requests.Session?
-    # TODO: json serialization func as parameter
     url: str
 
     def __init__(self, url: str) -> None:
@@ -162,7 +155,6 @@ class SpanClientAPI:
         data: dict[str, Any],
         parent_uid: bytes | None = None,
     ) -> None:
-        # TODO: Unpack type annotation: `**kwargs: Unpack[SpanDict]`
         span_uid: str = SpanPayload.uid_to_str(uid)
         request_payload: SpanPayload = SpanPayload.from_bytes_ids(
             name=name,
@@ -242,7 +234,7 @@ class SpanServerAPI:
         cls,
         span_db: SpanDataBase,
         span_api_path: str = SPAN_ENDPOINT_PATH,
-    ) -> APIRouter:  # TODO: WHy not return FastAPI app?
+    ) -> APIRouter:
         """
         Returns a router with the span server HTTP API endpoints.
         Database backed server.
@@ -266,35 +258,41 @@ class SpanServerAPI:
     @classmethod
     def create_span_server_app(
         cls,
+        # Host and port are passed by the FastAPIProcessRunner
+        host: str,
+        port: int,
         span_db: SpanDataBase,
         span_api_path: str = SPAN_ENDPOINT_PATH,
-        **kwargs,  # TODO
+        log_path: Path | None = None,
+        log_level: int = logging.INFO,
     ) -> FastAPI:
         """
         Returns a FastAPI app with the span server HTTP API endpoints.
         Database backed server.
         """
+        setup_logging(log_path=log_path, log_level=log_level)
         router = cls.get_span_server_router(
             span_db=span_db, span_api_path=span_api_path
         )
         app = FastAPI()
-        app.add_api_route(READINESS_ENDPOINT_PATH, readiness, methods=["GET"])
+        app.add_api_route(READINESS_ENDPOINT_PATH, readiness_api, methods=["GET"])
         app.include_router(router)
         return app
 
 
-def create_span_server(db_path: Path, **server_kwargs) -> FastAPIProcessRunner:
+def create_span_server(
+    db_path: Path,
+    log_path: Path | None = None,
+    **server_kwargs,
+) -> FastAPIProcessRunner:
+    log.info(f"Create remote trace server with db_path='{db_path!s}'")
+    log_level = server_kwargs.pop("log_level", logging.INFO)
     span_db = SpanDataBase(db_path=db_path)
     create_app = functools.partial(
         SpanServerAPI.create_span_server_app,
         span_db=span_db,
         span_api_path=SPAN_ENDPOINT_PATH,
+        log_level=log_level,
+        log_path=log_path,
     )
     return FastAPIProcessRunner(create_app=create_app, **server_kwargs)
-
-
-@contextlib.contextmanager
-def running_server(db_path: Path, **server_kwargs) -> Iterator[FastAPIProcessRunner]:
-    server = create_span_server(db_path=db_path, **server_kwargs)
-    with server:
-        yield server

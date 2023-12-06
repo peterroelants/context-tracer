@@ -12,11 +12,11 @@ from context_tracer.concurrency import (
     TraceThread,
 )
 from context_tracer.trace import trace
-from context_tracer.trace_context import TraceTree, get_current_span_safe_typed
 from context_tracer.trace_implementations.trace_server.tracer_remote import (
     TraceSpanRemote,
     TracingRemote,
 )
+from context_tracer.trace_types import TraceTree, get_current_span_safe_typed
 
 log = logging.getLogger(__name__)
 

@@ -20,7 +20,7 @@ where = ["src"]
 "context_tracer" = ["py.typed"]
 
 [project.urls]
-Source = "TODO"
+Source = "https://github.com/peterroelants/context-tracer/"
 
 
 # Tool configuration ###############################################

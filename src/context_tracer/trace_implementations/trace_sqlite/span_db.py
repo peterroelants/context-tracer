@@ -207,7 +207,7 @@ class SpanDataBase:
         New data will recursively overwrite old data by following the json patch standard.
         More info:
         - https://www.sqlite.org/json1.html#jpatch
-        - https://jsonpatch.com/
+        - https://datatracker.ietf.org/doc/html/rfc7396
         """
         UPDATE_DATA_JSON_SQL = f"""
             UPDATE {TABLE_NAME}

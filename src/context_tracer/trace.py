@@ -1,11 +1,13 @@
 import functools
-import inspect
 import logging
 from collections.abc import Callable
 from types import TracebackType
 from typing import Any, ParamSpec, Self, TypeVar, Union, overload
 
+from context_tracer.utils.time_utils import get_local_timestamp
+
 from .constants import (
+    END_TIME_KEY,
     EXCEPTION_KEY,
     EXCEPTION_TRACEBACK_KEY,
     EXCEPTION_TYPE_KEY,
@@ -15,13 +17,15 @@ from .constants import (
     FUNCTION_NAME_KEY,
     FUNCTION_RETURNED_KEY,
     NAME_KEY,
+    START_TIME_KEY,
 )
-from .trace_context import (
+from .trace_types import (
     TraceSpan,
     get_current_span,
     get_current_span_safe,
     trace_span_context,
 )
+from .utils.func_utils import func2str, get_func_bound_args
 from .utils.types import ContextManagerProtocol, DecoratorMeta
 
 logger = logging.getLogger(__name__)
@@ -71,7 +75,6 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
     Use `trace` instead of this class in your code.
     """
 
-    # TODO: Add generic type for AbstractContextManager
     _trace_ctx_mngr: ContextManagerProtocol | None = None
     data: dict[str, Any]
 
@@ -89,7 +92,7 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
         assert func is not None and callable(func)
         # Add function name as trace name if no name is provided
         if NAME_KEY not in self.data:
-            self.data[NAME_KEY] = get_func_name(func)
+            self.data[NAME_KEY] = func2str(func)
 
         @functools.wraps(func)
         def wrapped_func(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -98,7 +101,7 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
                 if span is not None:
                     # Log function info
                     function_info: dict = {
-                        FUNCTION_NAME_KEY: get_func_name(func),
+                        FUNCTION_NAME_KEY: func2str(func),
                         FUNCTION_KWARGS_KEY: get_func_bound_args(func, *args, **kwargs),
                     }
                     span.update_data(**{FUNCTION_DECORATOR_KEY: function_info})
@@ -112,11 +115,13 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
 
         return wrapped_func
 
-    # TODO: Parent span as optional argument?
     def __enter__(self: Self) -> TraceSpan | None:
         """
         Create a new span with the current one as parent (iff a current span exists).
         """
+        self.data[START_TIME_KEY] = get_local_timestamp().isoformat(
+            sep=" ", timespec="seconds"
+        )
         parent_span = get_current_span()
         if parent_span is not None:
             # Create a new span from the current span
@@ -134,11 +139,14 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
         __traceback: TracebackType | None = None,
     ) -> None:
         """Exit the current trace span context and reset to the parent."""
-        # TODO: Capture and log exceptions
         if self._trace_ctx_mngr is not None:
+            new_data: dict = {
+                END_TIME_KEY: get_local_timestamp().isoformat(
+                    sep=" ", timespec="seconds"
+                )
+            }
             if __exc_type is not None or __exc_value is not None:
-                # span should be there if there is a context manager
-                span = get_current_span_safe()
+                # Deal with exceptions
                 # Log exception
                 exc_info: dict = {}
                 if __exc_type is not None:
@@ -147,21 +155,10 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
                     exc_info[EXCEPTION_VALUE_KEY] = __exc_value
                 if __traceback is not None:
                     exc_info[EXCEPTION_TRACEBACK_KEY] = __traceback
-                span.update_data(**{EXCEPTION_KEY: exc_info})
+                new_data[EXCEPTION_KEY] = exc_info
+            # span should be there if there is a context manager
+            span = get_current_span_safe()
+            span.update_data(**new_data)
             # Exit the current trace span context if it exists.
             self._trace_ctx_mngr.__exit__(__exc_type, __exc_value, __traceback)
             self._trace_ctx_mngr = None
-
-
-def get_func_bound_args(func: Callable, *args, **kwargs) -> dict:
-    """Get the kwargs dict of all arguments bounded to the function signature."""
-    sig = inspect.signature(func)
-    bound = sig.bind(*args, **kwargs)
-    bound.apply_defaults()
-    return bound.arguments
-
-
-# TODO: Move to utils
-def get_func_name(func: Callable) -> str:
-    """Get a name representing the function."""
-    return getattr(func, "__name__", repr(func))

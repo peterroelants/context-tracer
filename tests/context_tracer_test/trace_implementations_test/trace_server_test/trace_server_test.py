@@ -8,7 +8,7 @@ from context_tracer.trace_implementations.trace_server.trace_server import (
     SpanClientAPI,
     SpanDict,
     SpanPayload,
-    running_server,
+    create_span_server,
 )
 from context_tracer.utils.id_utils import new_uid
 
@@ -42,7 +42,8 @@ def test_running_server(tmp_db_path: Path) -> None:
         "data": {"test": "test"},
         "parent_uid": None,
     }
-    with running_server(db_path=tmp_db_path) as server:
+    server = create_span_server(db_path=tmp_db_path)
+    with server:
         url = f"http://localhost:{server.port}"
         client = SpanClientAPI(url=url)
         client.wait_for_ready()
@@ -62,7 +63,8 @@ def test_span_client_api_patch_update_span(tmp_db_path: Path) -> None:
         "data": data_orig,
         "parent_uid": None,
     }
-    with running_server(db_path=tmp_db_path) as server:
+    server = create_span_server(db_path=tmp_db_path)
+    with server:
         url = f"http://localhost:{server.port}"
         client = SpanClientAPI(url=url)
         client.wait_for_ready()
@@ -99,7 +101,8 @@ def test_span_client_api_get_children_uids(tmp_db_path: Path) -> None:
         "data": {"test": "test"},
         "parent_uid": span_1_dict["uid"],
     }
-    with running_server(db_path=tmp_db_path) as server:
+    server = create_span_server(db_path=tmp_db_path)
+    with server:
         url = f"http://localhost:{server.port}"
         client = SpanClientAPI(url=url)
         client.wait_for_ready()

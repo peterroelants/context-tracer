@@ -19,9 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 TraceSpanType = TypeVar("TraceSpanType", bound="TraceSpan")
-# TODO: `_cov` suffix to `_return` for covariant types?
-TraceSpanType_cov = TypeVar("TraceSpanType_cov", bound="TraceSpan", covariant=True)
-TraceTreeType_cov = TypeVar("TraceTreeType_cov", bound="TraceTree", covariant=True)
+TraceSpanType_return = TypeVar(
+    "TraceSpanType_return", bound="TraceSpan", covariant=True
+)
+TraceTreeType_return = TypeVar(
+    "TraceTreeType_return", bound="TraceTree", covariant=True
+)
 
 
 # Context ##########################################################
@@ -125,7 +128,7 @@ class TraceTree(Protocol):
 # TODO: Rename to Tracer to be consistent with OpenTelemetry? https://opentelemetry.io/docs/concepts/signals/traces/#tracer-provider
 # TODO: Documentation: prefer to inherit from this to keep functionality, but can also implement this protocol
 @runtime_checkable
-class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
+class Tracing(Protocol[TraceSpanType_return, TraceTreeType_return]):
     """
     Capture a hierarchy of TraceSpans.
 
@@ -139,13 +142,13 @@ class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
     # Can this be given as an argument to __enter__?
     @property
     @abstractmethod
-    def root_span(self) -> TraceSpanType_cov:
+    def root_span(self) -> TraceSpanType_return:
         """Root node of the trace tree."""
         ...
 
     @property
     @abstractmethod
-    def tree(self) -> TraceTreeType_cov:
+    def tree(self) -> TraceTreeType_return:
         """Return a representable version of the root of the trace tree."""
         ...
 
@@ -171,11 +174,11 @@ class Tracing(Protocol[TraceSpanType_cov, TraceTreeType_cov]):
 
 # Manage Trace Context #############################################
 @contextlib.contextmanager
-def trace_span_context(span: TraceSpan) -> Iterator[TraceSpan]:
+def trace_span_context(span: TraceSpanType) -> Iterator[TraceSpanType]:
     """
     Run in the context of the given Span.
     """
-    # TODO: Use copy_context to copy the context?
+    # TODO: Use `contextvars.copy_context()` get a copy of the context without needing to have access to `_TRACE_SPAN_IN_CONTEXT`?
     reset_token = _TRACE_SPAN_IN_CONTEXT.set(span)
     try:
         with span:  # Enter Span Context
@@ -197,7 +200,9 @@ def get_current_span_safe() -> TraceSpan:
     """
     current_trace: TraceSpan | None = get_current_span()
     if current_trace is None:
-        raise TraceError("No Span is running. Run in the context of a `Tracing`!")
+        raise TraceError(
+            f"No Span is running. Run this only in the context of a `{Tracing.__name__}`!"
+        )
     return current_trace
 
 
@@ -210,5 +215,7 @@ def get_current_span_safe_typed(T: type[TraceSpanType]) -> TraceSpanType:
     """
     current_span: TraceSpan = get_current_span_safe()
     if not isinstance(current_span, T):
-        raise TraceError(f"Expected type {T}, got {type(current_span)}")
+        raise TraceError(
+            f"Expected type {T.__name__!r}, got {type(current_span).__name__!r}!"
+        )
     return current_span

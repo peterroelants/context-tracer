@@ -6,7 +6,6 @@ from typing import (
     Self,
 )
 
-from context_tracer.trace_context import Tracing
 from context_tracer.trace_implementations.trace_server.trace_server import (
     SpanDataBase,
 )
@@ -17,7 +16,8 @@ from context_tracer.trace_implementations.trace_server.tracer_remote import (
 from context_tracer.trace_implementations.trace_sqlite.tracer_sqlite import (
     TraceTreeSqlite,
 )
-from context_tracer.utils.fast_api_process_runner import (
+from context_tracer.trace_types import Tracing
+from context_tracer.utils.fast_api_utils import (
     FastAPIProcessRunner,
 )
 
@@ -30,6 +30,7 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
     _view_server: FastAPIProcessRunner | None = None
     _tracing_remote: TracingRemote
     _export_html_path: Path | None
+    _log_path: Path | None
     _server_kwargs: dict[str, Any]
     _open_browser: bool
 
@@ -37,6 +38,7 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
         self,
         db_path: Path,
         export_html_path: Path | None = None,
+        log_path: Path | None = None,
         open_browser: bool = False,
         name: str = "root",
         root_uid: bytes | None = None,
@@ -49,6 +51,7 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
         self._server_kwargs = server_kwargs
         self._export_html_path = export_html_path
         self._open_browser = open_browser
+        self._log_path = log_path
 
     @property
     def url(self) -> str:
@@ -74,6 +77,7 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
         self._view_server: FastAPIProcessRunner = create_view_server(
             db_path=self._tracing_remote.span_db_path,
             export_html_path=self._export_html_path,
+            log_path=self._log_path,
             **self._server_kwargs,
         )
         self._view_server.__enter__()

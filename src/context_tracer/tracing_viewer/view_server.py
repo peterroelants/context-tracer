@@ -8,27 +8,33 @@ import os
 import signal
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, AsyncIterator, Final
+from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, FastAPI, Response
+from fastapi import APIRouter, FastAPI
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketState
 from websockets.exceptions import ConnectionClosedError
 
-from context_tracer.trace_context import TraceTree
 from context_tracer.trace_implementations.trace_sqlite import TraceTreeSqlite
 from context_tracer.trace_implementations.trace_sqlite.span_db import (
     SpanDataBase,
 )
-from context_tracer.utils.fast_api_process_runner import (
+from context_tracer.trace_types import TraceTree
+from context_tracer.utils.fast_api_utils import (
     FastAPIProcessRunner,
+    StaticNoCache,
+)
+from context_tracer.utils.fast_api_utils.readiness import (
+    READINESS_ENDPOINT_PATH,
+    readiness_api,
 )
 from context_tracer.utils.json_encoder import AnyEncoder
+from context_tracer.utils.logging_utils import setup_logging
 
 from .load_templates import get_flamechart_view
 
 log = logging.getLogger(__name__)
+
 
 # Resources
 THIS_DIR = Path(__file__).parent.resolve()
@@ -37,16 +43,6 @@ STATIC_FILES_DIR = THIS_DIR / "server_static"
 assert STATIC_FILES_DIR.exists()
 STATIC_PATH = "/static"
 WEBSOCKET_PATH = "/ws"
-
-
-# TODO: Move this to some module?
-# TODO: Proper HTTP endpoints all using ID in path
-READINESS_ENDPOINT_PATH: Final[str] = "/api/status/ready"
-
-
-async def readiness() -> Response:
-    """Readiness check endpoint."""
-    return Response(content="ok", status_code=HTTPStatus.OK)
 
 
 # Server ###########################################################
@@ -102,7 +98,7 @@ class ViewServerAPI:
             log.debug(
                 f"Check for last updated data (iteration={count}) on PID={os.getpid()}"
             )
-            _, timestamp = self.span_db.get_last_updated_span_uid()  # TODO
+            _, timestamp = self.span_db.get_last_updated_span_uid()
             if timestamp and timestamp > timestamp_last_update:
                 timestamp_last_update = timestamp
                 tree_json = await self.get_full_span_tree_json()
@@ -189,14 +185,14 @@ class ViewServerAPI:
         websocket_path: str = WEBSOCKET_PATH,
         readiness_path: str = READINESS_ENDPOINT_PATH,
         export_html_path: Path | None = None,
-        log_dir: Path | None = None,
+        log_path: Path | None = None,
         log_level: int = logging.INFO,
     ) -> FastAPI:
         """
         Returns a FastAPI app with the span server HTTP API endpoints.
         Database backed server.
         """
-        setup_logging(log_dir=log_dir, log_level=log_level)
+        setup_logging(log_path=log_path, log_level=log_level)
         api = cls(
             span_db=span_db,
             host=host,
@@ -206,14 +202,17 @@ class ViewServerAPI:
         )
         app = FastAPI(lifespan=api.lifespan)
         app.mount(STATIC_PATH, StaticNoCache(directory=STATIC_FILES_DIR), name="static")
-        app.add_api_route(readiness_path, readiness, methods=["GET"])
+        app.add_api_route(readiness_path, readiness_api, methods=["GET"])
         app.include_router(api.get_router())
         log.debug(f"FastAPI app created: {app=!r} on PID={os.getpid()}")
         return app
 
 
 def create_view_server(
-    db_path: Path, export_html_path: Path | None, **server_kwargs
+    db_path: Path,
+    export_html_path: Path | None,
+    log_path: Path | None = None,
+    **server_kwargs,
 ) -> FastAPIProcessRunner:
     log.info(f"Create view server with db_path={db_path}")
     log_level = server_kwargs.pop("log_level", logging.INFO)
@@ -225,7 +224,7 @@ def create_view_server(
         readiness_path=READINESS_ENDPOINT_PATH,
         export_html_path=export_html_path,
         log_level=log_level,
-        log_dir=db_path.parent,
+        log_path=log_path,
     )
     log.debug(f"Return FastAPIProcessRunner with {create_app=!r}")
     return FastAPIProcessRunner(create_app=create_app, **server_kwargs)
@@ -237,32 +236,3 @@ def trace_tree_to_dict(trace_tree: TraceTree) -> dict[str, Any]:
         "data": trace_tree.data,
         "children": [trace_tree_to_dict(child) for child in trace_tree.children],
     }
-
-
-class StaticNoCache(StaticFiles):
-    def is_not_modified(self, *args, **kwargs) -> bool:
-        return False
-
-    def file_response(self, *args, **kwargs) -> Response:
-        resp = super().file_response(*args, **kwargs)
-        resp.headers["Cache-Control"] = "no-cache"
-        return resp
-
-
-def setup_logging(
-    log_dir: Path | None = None,
-    log_level: int = logging.INFO,
-) -> None:
-    if log_dir is not None:
-        log.debug(f"Setup logging to {log_dir}, {log_level=}")
-        log_dir = log_dir.expanduser().resolve()
-        log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(str(log_dir / "view_server.log"))
-        file_handler.setFormatter(
-            logging.Formatter(
-                fmt="# %(levelname)s: %(asctime)s :: %(name)s.%(funcName)s:%(lineno)d\n  %(message)s"
-            )
-        )
-        file_handler.setLevel(log_level)
-        # Add file handler to root logger
-        logging.getLogger().addHandler(file_handler)
