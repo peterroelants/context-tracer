@@ -34,12 +34,12 @@ exclude = [
 [tool.setuptools.package-data]
 context_tracer = [
   "py.typed",
-  "*.css",
-  "*.js",
-  "*.jinja",
-  "*.html",
-  "src/context_tracer/tracing_viewer/server_static/*",
-  "src/context_tracer/tracing_viewer/templates/*",
+  "**/*.css",
+  "**/*.js",
+  "**/*.jinja",
+  "**/*.html",
+  "tracing_viewer/server_static/*",
+  "tracing_viewer/templates/*",
 ]
 
 [project.urls]
