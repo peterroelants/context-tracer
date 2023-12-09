@@ -22,7 +22,9 @@ class DecoratorTester(metaclass=DecoratorMeta):
 
 
 @overload
-def decorator_tester(func: Callable[P, R], *args: Any, **kwargs: Any) -> Callable[P, R]:
+def decorator_tester(  # type: ignore
+    func: Callable[P, R], *args: Any, **kwargs: Any
+) -> Callable[P, R]:
     """Type when first argument is a function."""
     ...
 

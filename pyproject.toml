@@ -2,13 +2,20 @@
 name = "context-tracer"
 description = "Python Context Tracer"
 readme = "README.md"
-version = "0.1.0"
+version = "0.1.1"
 license = {text = "Closed"}
 classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "pydantic>2",
+  "fastapi",
+  "uvicorn",
+  "uuid6",
+  "websockets>=11",
+  "requests",
+]
 
 [build-system]
 requires = ["setuptools>=67", "wheel"]
@@ -16,8 +23,24 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = [
+  "test/*",
+  "tools/*",
+  "env/*",
+  "infra/*",
+  "notebooks/*",
+]
+
 [tool.setuptools.package-data]
-"context_tracer" = ["py.typed"]
+context_tracer = [
+  "py.typed",
+  "*.css",
+  "*.js",
+  "*.jinja",
+  "*.html",
+  "src/context_tracer/tracing_viewer/server_static/*",
+  "src/context_tracer/tracing_viewer/templates/*",
+]
 
 [project.urls]
 Source = "https://github.com/peterroelants/context-tracer/"

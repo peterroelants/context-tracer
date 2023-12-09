@@ -9,7 +9,7 @@ repos:
       name: Clean notebooks
       language: system
       files: .*\.ipynb$
-      entry: "conda run --name fin_agent jupyter nbconvert --clear-output"
+      entry: "conda run --name context_tracer_env jupyter nbconvert --clear-output"
 # General cleanup hooks
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
@@ -40,4 +40,4 @@ repos:
       name: Run auto-code formatters
       pass_filenames: false
       language: system
-      entry: "conda run --name fin_agent tools/run_formatting.sh"
+      entry: "conda run --name context_tracer_env tools/run_formatting.sh"

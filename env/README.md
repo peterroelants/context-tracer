@@ -27,3 +27,4 @@ The local package at `./src/context_tracer` can be installed with `pip install -
 ```
 conda run -n fin_agent pre-commit install
 ```
+.
