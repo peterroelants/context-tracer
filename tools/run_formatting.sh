@@ -20,4 +20,4 @@ echo -e "\nRun Black code formatting"
 black \
     "${ROOT_PATH}/src" \
     "${ROOT_PATH}/tests" \
-    "${ROOT_PATH}"/notebooks/**/*.ipynb
+    "${ROOT_PATH}"/notebooks/**.ipynb

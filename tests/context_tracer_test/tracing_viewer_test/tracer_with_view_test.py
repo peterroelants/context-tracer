@@ -28,7 +28,7 @@ def test_tracing_with_viewer(
 ) -> None:
     with TracingWithViewer(
         db_path=tmp_db_path,
-        log_path=tmp_log_path,
+        log_dir=tmp_log_path,
         log_level=logging.DEBUG,
         export_html_path=tmp_html_export_path,
     ) as tracing:

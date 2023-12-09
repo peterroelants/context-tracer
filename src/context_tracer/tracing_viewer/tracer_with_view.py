@@ -30,7 +30,7 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
     _view_server: FastAPIProcessRunner | None = None
     _tracing_remote: TracingRemote
     _export_html_path: Path | None
-    _log_path: Path | None
+    _log_dir: Path | None
     _server_kwargs: dict[str, Any]
     _open_browser: bool
 
@@ -38,20 +38,27 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
         self,
         db_path: Path,
         export_html_path: Path | None = None,
-        log_path: Path | None = None,
+        log_dir: Path | None = None,
         open_browser: bool = False,
         name: str = "root",
         root_uid: bytes | None = None,
         **server_kwargs,
     ) -> None:
         log.debug(f"TracingRemote(db_path={db_path}, name={name})")
+        remote_tracing_log_path = None
+        if log_dir is not None:
+            remote_tracing_log_path = log_dir / "remote_tracing.log"
         self._tracing_remote = TracingRemote(
-            db_path=db_path, name=name, root_uid=root_uid, **server_kwargs
+            db_path=db_path,
+            name=name,
+            root_uid=root_uid,
+            log_path=remote_tracing_log_path,
+            **server_kwargs,
         )
         self._server_kwargs = server_kwargs
         self._export_html_path = export_html_path
         self._open_browser = open_browser
-        self._log_path = log_path
+        self._log_dir = log_dir
 
     @property
     def url(self) -> str:
@@ -74,10 +81,13 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
 
     def __enter__(self: Self) -> Self:
         """Start a new tracing."""
+        viewer_log_path = None
+        if self._log_dir is not None:
+            viewer_log_path = self._log_dir / "viewer.log"
         self._view_server: FastAPIProcessRunner = create_view_server(
             db_path=self._tracing_remote.span_db_path,
             export_html_path=self._export_html_path,
-            log_path=self._log_path,
+            log_path=viewer_log_path,
             **self._server_kwargs,
         )
         self._view_server.__enter__()

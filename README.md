@@ -3,13 +3,23 @@
 Package to help trace Python function call contexts. Initially developed to trace LLM Agent function calls.
 
 
-TODO:
-- Follow OTel (OpenTelemetry) conventions for tracing
-  - https://betterprogramming.pub/trace-context-propagation-with-opentelemetry-b8816f2f065e
-  - https://blog.devgenius.io/opentelemetry-for-python-the-hard-way-aa3507b87343
-  - https://opentelemetry.io/docs/instrumentation/python/cookbook/
-  - https://docs.gethelios.dev/docs/manual-context-propagation
-  - https://github.com/open-telemetry/opentelemetry-python/issues/1266
-  - https://opentelemetry.io/docs/instrumentation/python/getting-started/
-  - https://github.com/open-telemetry/opentelemetry-python/blob/952339c6492d98de94d379eca173a16deddda8ca/opentelemetry-api/src/opentelemetry/context/contextvars_context.py#L19
-  -
+
+## Usage
+
+See [notebooks/example.ipynb](notebooks/example.ipynb) for a usage example.
+
+
+
+## OTEL
+This library has some similarities with [OTel (OpenTelemetry)](https://opentelemetry.io/docs/instrumentation/python/). OTEL is focussed on distributed tracing for microservice applications. This library is focussed on tracing function calls within a single application. OTEL is a much more mature project and has a lot more features. This library is much simpler and has a much smaller footprint.
+
+### Questions/TODO:
+- Follow OTel (OpenTelemetry) conventions for tracing to be more compatible with OTel.
+  - https://opentelemetry.io/docs/specs/otel/trace/api/
+  - https://opentelemetry.io/docs/specs/otel/overview/
+  - https://opentelemetry.io/docs/concepts/signals/traces/
+- Can this library be re-creating by building on top of OTel?
+  - Using [manual instrumentation](https://opentelemetry.io/docs/instrumentation/python/manual/)?
+  - Using a custom [collector](https://opentelemetry.io/docs/collector/)?
+- Build building this library on top of Otel cause unnecessary overhead/conflicts?
+  - E.g. The goal is different, you might want to separately trace function calls, and microservice telemetry.

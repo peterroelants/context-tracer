@@ -2,7 +2,7 @@
 name = "context-tracer"
 description = "Python Context Tracer"
 readme = "README.md"
-version = "0.0.1"
+version = "0.1.0"
 license = {text = "Closed"}
 classifiers = [
     "Programming Language :: Python :: 3.11",

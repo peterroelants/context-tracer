@@ -81,7 +81,6 @@ class TraceSpan(Protocol):
         """Create a new child node with self as parent."""
         ...
 
-    # TODO: Is update_data really needed? Can we just write everything out at the end?
     @abstractmethod
     def update_data(self, **kwargs) -> None:
         """Add data to the current node."""
@@ -178,7 +177,6 @@ def trace_span_context(span: TraceSpanType) -> Iterator[TraceSpanType]:
     """
     Run in the context of the given Span.
     """
-    # TODO: Use `contextvars.copy_context()` get a copy of the context without needing to have access to `_TRACE_SPAN_IN_CONTEXT`?
     reset_token = _TRACE_SPAN_IN_CONTEXT.set(span)
     try:
         with span:  # Enter Span Context
