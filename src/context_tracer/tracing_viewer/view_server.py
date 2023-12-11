@@ -111,15 +111,18 @@ class ViewServerAPI:
                     break
             await asyncio.sleep(1)
         log.debug(f"{self._websocket_active=!r}")
-        # Try sending last data
-        await asyncio.sleep(1)
+        log.debug(f"{websocket.client_state=!r}")
         try:
             tree_json = await self.get_full_span_tree_json()
             if websocket.client_state == WebSocketState.CONNECTED:
+                log.debug(
+                    f"{type(self).__name__}: Send last websocket update to client"
+                )
                 await websocket.send_text(tree_json)
         except Exception as exc:
             log.warning(f"Client disconnected: {type(exc).__name__}: {exc}")
         await websocket.close()
+        log.debug(f"{type(self).__name__}: Websocket closed")
 
     async def get_full_span_tree_json(self) -> str:
         """Get full tree as JSON string."""
@@ -153,20 +156,27 @@ class ViewServerAPI:
         - https://fastapi.tiangolo.com/advanced/events/
         - https://asgi.readthedocs.io/en/latest/specs/lifespan.html
         """
-        log.debug(f"{self.__class__.__name__}.lifespan()")
         # Install signal handlers to interrupt websocket loop
         signal.signal(signal.SIGTERM, self.stop_server)
         signal.signal(signal.SIGINT, self.stop_server)
-        log.debug(f"Installed signal handlers on PID={os.getpid()}")
+        log.debug(
+            f"{self.__class__.__name__}.lifespan: Installed signal handlers on PID={os.getpid()}"
+        )
         yield
-        log.debug(f"Shutdown server on PID={os.getpid()}")
+        log.debug(
+            f"{self.__class__.__name__}.lifespan: Shutdown server on PID={os.getpid()}"
+        )
         # On shutdown is only run after all connections are closed
         self._websocket_active = False
+        # Force write-ahead log checkpoint before exporting full HTML
         self.span_db.wal_checkpoint()
-        log.debug(f"Checkpointed WAL on PID={os.getpid()}")
+        log.debug(
+            f"{self.__class__.__name__}.lifespan: Checkpointed WAL on PID={os.getpid()}"
+        )
         await self._export_html()
 
     def stop_server(self, sig_num: int, *args, **kwargs) -> None:
+        log.debug(f"{self.__class__.__name__}.stop_server()")
         self._websocket_active = False
 
     def get_router(self) -> APIRouter:
@@ -197,6 +207,7 @@ class ViewServerAPI:
         Database backed server.
         """
         setup_logging(log_path=log_path, log_level=log_level)
+        log.debug(f"{cls.__name__}.create_app()")
         api = cls(
             span_db=span_db,
             host=host,
@@ -208,7 +219,7 @@ class ViewServerAPI:
         app.mount(STATIC_PATH, StaticNoCache(directory=STATIC_FILES_DIR), name="static")
         app.add_api_route(readiness_path, readiness_api, methods=["GET"])
         app.include_router(api.get_router())
-        log.debug(f"FastAPI app created: {app=!r} on PID={os.getpid()}")
+        log.debug(f"{cls.__name__} FastAPI app created: {app=!r} on PID={os.getpid()}")
         return app
 
 

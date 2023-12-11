@@ -4,9 +4,9 @@ import uuid
 import pytest
 from context_tracer.constants import (
     EXCEPTION_KEY,
-    EXCEPTION_TRACEBACK_KEY,
+    EXCEPTION_MESSAGE_KEY,
+    EXCEPTION_STACKTRACE_KEY,
     EXCEPTION_TYPE_KEY,
-    EXCEPTION_VALUE_KEY,
     FUNCTION_DECORATOR_KEY,
     FUNCTION_KWARGS_KEY,
     FUNCTION_NAME_KEY,
@@ -180,6 +180,6 @@ def test_trace_function_decorator_exception() -> None:
     assert span.data[FUNCTION_DECORATOR_KEY][FUNCTION_NAME_KEY] == mock_program.__name__
     assert span.data[FUNCTION_DECORATOR_KEY][FUNCTION_KWARGS_KEY] == {}
     assert FUNCTION_RETURNED_KEY not in span.data[FUNCTION_DECORATOR_KEY]
-    assert span.data[EXCEPTION_KEY][EXCEPTION_TYPE_KEY] == MyException
-    assert span.data[EXCEPTION_KEY][EXCEPTION_VALUE_KEY].args[0] == exception_value
-    assert span.data[EXCEPTION_KEY][EXCEPTION_TRACEBACK_KEY]
+    assert span.data[EXCEPTION_KEY][EXCEPTION_TYPE_KEY] == MyException.__name__
+    assert span.data[EXCEPTION_KEY][EXCEPTION_MESSAGE_KEY] == exception_value
+    assert span.data[EXCEPTION_KEY][EXCEPTION_STACKTRACE_KEY]

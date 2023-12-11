@@ -1,4 +1,5 @@
 import logging
+import time
 import webbrowser
 from pathlib import Path
 from typing import (
@@ -103,7 +104,9 @@ class TracingWithViewer(Tracing[TraceSpanRemote, TraceTreeSqlite]):
         finally:
             try:
                 self._tracing_remote.__exit__(*args, **kwargs)
+                time.sleep(0.1)
             finally:
+                # Close view server last
                 if self._view_server is not None:
                     self._view_server.__exit__(*args, **kwargs)
                 self._server = None

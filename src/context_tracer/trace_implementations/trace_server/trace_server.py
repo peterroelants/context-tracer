@@ -1,10 +1,12 @@
+import contextlib
 import functools
 import json
 import logging
+import os
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Final, Self, TypedDict
+from typing import Any, AsyncIterator, Final, Self, TypedDict
 
 import requests
 from fastapi import APIRouter, FastAPI
@@ -229,40 +231,52 @@ class SpanServerAPI:
         uids: list[bytes] = self.span_db.get_root_uids()
         return [SpanPayload.uid_to_str(uid) for uid in uids]
 
-    @classmethod
-    def get_span_server_router(
-        cls,
-        span_db: SpanDataBase,
+    @contextlib.asynccontextmanager
+    async def lifespan(self, app: FastAPI) -> AsyncIterator[None]:
+        """
+        ASGI lifespan event handler.
+
+        - https://fastapi.tiangolo.com/advanced/events/
+        - https://asgi.readthedocs.io/en/latest/specs/lifespan.html
+        """
+        log.debug(f"{self.__class__.__name__}.lifespan enter")
+        yield
+        log.debug(f"{self.__class__.__name__}.lifespan exit")
+
+    def get_router(
+        self,
         span_api_path: str = SPAN_ENDPOINT_PATH,
+        span_children_path: str = SPAN_CHILDREN_ENDPOINT_PATH,
+        span_root_ids_path: str = ROOT_SPAN_IDS_ENDPOINT_PATH,
     ) -> APIRouter:
         """
         Returns a router with the span server HTTP API endpoints.
         Database backed server.
         To be included in a FastAPI app.
         """
-        api = cls(span_db=span_db)
         router = APIRouter()
-        router.add_api_route(span_api_path, api.put_new_span, methods=["PUT"])
-        router.add_api_route(span_api_path, api.patch_update_span, methods=["PATCH"])
+        router.add_api_route(span_api_path, self.put_new_span, methods=["PUT"])
+        router.add_api_route(span_api_path, self.patch_update_span, methods=["PATCH"])
         router.add_api_route(
-            span_api_path, api.get_span, methods=["GET"], response_model=SpanPayload
+            span_api_path, self.get_span, methods=["GET"], response_model=SpanPayload
         )
+        router.add_api_route(span_children_path, self.get_children_ids, methods=["GET"])
         router.add_api_route(
-            SPAN_CHILDREN_ENDPOINT_PATH, api.get_children_ids, methods=["GET"]
-        )
-        router.add_api_route(
-            ROOT_SPAN_IDS_ENDPOINT_PATH, api.get_root_span_ids, methods=["GET"]
+            span_root_ids_path, self.get_root_span_ids, methods=["GET"]
         )
         return router
 
     @classmethod
-    def create_span_server_app(
+    def create_app(
         cls,
         # Host and port are passed by the FastAPIProcessRunner
         host: str,
         port: int,
         span_db: SpanDataBase,
         span_api_path: str = SPAN_ENDPOINT_PATH,
+        readiness_path: str = READINESS_ENDPOINT_PATH,
+        span_children_path: str = SPAN_CHILDREN_ENDPOINT_PATH,
+        span_root_ids_path: str = ROOT_SPAN_IDS_ENDPOINT_PATH,
         log_path: Path | None = None,
         log_level: int = logging.INFO,
     ) -> FastAPI:
@@ -271,12 +285,17 @@ class SpanServerAPI:
         Database backed server.
         """
         setup_logging(log_path=log_path, log_level=log_level)
-        router = cls.get_span_server_router(
-            span_db=span_db, span_api_path=span_api_path
+        log.debug(f"{cls.__name__}.create_app()")
+        api = cls(span_db=span_db)
+        router = api.get_router(
+            span_api_path=span_api_path,
+            span_children_path=span_children_path,
+            span_root_ids_path=span_root_ids_path,
         )
-        app = FastAPI()
-        app.add_api_route(READINESS_ENDPOINT_PATH, readiness_api, methods=["GET"])
+        app = FastAPI(lifespan=api.lifespan)
+        app.add_api_route(readiness_path, readiness_api, methods=["GET"])
         app.include_router(router)
+        log.debug(f"{cls.__name__} FastAPI app created: {app=!r} on PID={os.getpid()}")
         return app
 
 
@@ -289,7 +308,7 @@ def create_span_server(
     log_level = server_kwargs.pop("log_level", logging.INFO)
     span_db = SpanDataBase(db_path=db_path)
     create_app = functools.partial(
-        SpanServerAPI.create_span_server_app,
+        SpanServerAPI.create_app,
         span_db=span_db,
         span_api_path=SPAN_ENDPOINT_PATH,
         log_level=log_level,

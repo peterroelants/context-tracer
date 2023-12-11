@@ -7,6 +7,7 @@ from types import TracebackType
 from typing import Any, Protocol, Self, runtime_checkable
 
 import uvicorn
+import uvicorn.config
 from fastapi import FastAPI
 
 log = logging.getLogger(__name__)
@@ -83,7 +84,11 @@ class FastAPIProcessRunner(ServerContextProtocol):
         """
         log.debug(f"{self.__class__.__name__}._run({sockets=}) on PID={os.getpid()}")
         app = self._create_app(host=self.host, port=self.port)
-        server = uvicorn.Server(
+        # Clear all loggers (uvicorn adds loggers that don't propagate to root logger)
+        log_config = uvicorn.config.LOGGING_CONFIG
+        log_config["loggers"] = {}
+        self._uvicorn_server_kwargs["log_config"] = log_config
+        server = ServerNoSignalHandler(
             config=uvicorn.Config(app, **self._uvicorn_server_kwargs)
         )
         log.debug(f"Starting server on {self.host}:{self.port} on PID={os.getpid()}")
@@ -146,3 +151,18 @@ class FastAPIProcessRunner(ServerContextProtocol):
     def __exit__(self, *args, **kwargs) -> None:
         log.debug(f"{self.__class__.__name__}.__exit__({args=}, {kwargs=})")
         self.stop()
+
+
+class ServerNoSignalHandler(uvicorn.Server):
+    """
+    A uvicorn Server that does not install signal handlers.
+
+    Do this to allow custom signal handling in the parent process.
+
+    Related:
+    - https://github.com/encode/uvicorn/issues/1579
+    """
+
+    def install_signal_handlers(self):
+        pass
+        super().install_signal_handlers()

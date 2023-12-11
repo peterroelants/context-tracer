@@ -9,7 +9,6 @@ def setup_logging(
     log_level: int = logging.INFO,
 ) -> None:
     if log_path is not None:
-        log.debug(f"Setup logging to {log_path}, {log_level=}")
         log_path = log_path.expanduser().resolve()
         log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(str(log_path))
@@ -21,3 +20,4 @@ def setup_logging(
         file_handler.setLevel(log_level)
         # Add file handler to root logger
         logging.getLogger().addHandler(file_handler)
+        log.debug(f"Logging Setup at to {log_path}, {log_level=}")

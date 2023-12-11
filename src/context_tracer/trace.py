@@ -9,9 +9,9 @@ from context_tracer.utils.time_utils import get_local_timestamp
 from .constants import (
     END_TIME_KEY,
     EXCEPTION_KEY,
-    EXCEPTION_TRACEBACK_KEY,
+    EXCEPTION_MESSAGE_KEY,
+    EXCEPTION_STACKTRACE_KEY,
     EXCEPTION_TYPE_KEY,
-    EXCEPTION_VALUE_KEY,
     FUNCTION_DECORATOR_KEY,
     FUNCTION_KWARGS_KEY,
     FUNCTION_NAME_KEY,
@@ -155,11 +155,11 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
                 # Log exception
                 exc_info: dict = {}
                 if __exc_type is not None:
-                    exc_info[EXCEPTION_TYPE_KEY] = __exc_type
+                    exc_info[EXCEPTION_TYPE_KEY] = __exc_type.__name__
                 if __exc_value is not None:
-                    exc_info[EXCEPTION_VALUE_KEY] = __exc_value
+                    exc_info[EXCEPTION_MESSAGE_KEY] = str(__exc_value)
                 if __traceback is not None:
-                    exc_info[EXCEPTION_TRACEBACK_KEY] = __traceback
+                    exc_info[EXCEPTION_STACKTRACE_KEY] = __traceback
                 new_data[EXCEPTION_KEY] = exc_info
             # span should be there if there is a context manager
             span = get_current_span_safe()

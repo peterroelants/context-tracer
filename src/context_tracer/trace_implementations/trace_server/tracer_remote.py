@@ -149,9 +149,12 @@ class TracingRemote(Tracing[TraceSpanRemote, TraceTreeSqlite]):
     def __exit__(self, *args, **kwargs) -> None:
         """Reset the tracing."""
         try:
+            # Close tracing first, so that the server can be stopped
             super().__exit__(*args, **kwargs)
         finally:
             if self._server is not None:
                 self._server.__exit__(*args, **kwargs)
             self._server = None
+            # Persist the write-ahead-log to the database
+            self.span_db.wal_checkpoint()
         return
