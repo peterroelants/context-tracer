@@ -23,3 +23,8 @@ This library has some similarities with [OTel (OpenTelemetry)](https://opentelem
   - Using a custom [collector](https://opentelemetry.io/docs/collector/)?
 - Build building this library on top of Otel cause unnecessary overhead/conflicts?
   - E.g. The goal is different, you might want to separately trace function calls, and microservice telemetry.
+- DAG visualisation:
+  -  https://reactflow.dev/
+  -  https://github.com/clientIO/joint
+  -  https://js.cytoscape.org/
+  -  https://github.com/dagrejs/dagre-d3/wiki

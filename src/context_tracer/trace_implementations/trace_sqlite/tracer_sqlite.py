@@ -6,7 +6,7 @@ from typing import Any, Final, Self
 from context_tracer.constants import NAME_KEY
 from context_tracer.trace_types import TraceSpan, TraceTree, Tracing
 from context_tracer.utils.id_utils import new_uid
-from context_tracer.utils.json_encoder import AnyEncoder, JSONDictType
+from context_tracer.utils.json_encoder import CustomEncoder, JSONDictType
 
 from .span_db import SpanDataBase
 
@@ -50,7 +50,7 @@ class TraceSpanSqlite(TraceSpan, AbstractContextManager):
         data: dict[str, Any],
         parent_uid: bytes | None,
     ) -> Self:
-        data_json: str = json.dumps(data, cls=AnyEncoder)
+        data_json: str = json.dumps(data, cls=CustomEncoder)
         span_uid = new_uid()
         span_db.insert(
             uid=span_uid,
@@ -67,7 +67,7 @@ class TraceSpanSqlite(TraceSpan, AbstractContextManager):
         )
 
     def update_data(self, **new_data) -> None:
-        data_json: str = json.dumps(new_data, cls=AnyEncoder)
+        data_json: str = json.dumps(new_data, cls=CustomEncoder)
         self.span_db.update_data_json(uid=self._span_uid, data_json=data_json)
 
 

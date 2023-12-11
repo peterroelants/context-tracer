@@ -1,6 +1,7 @@
 from typing import Final, Literal
 
 # Common keys
+TRACE_METADATA_KEY: Final[str] = "trace_metadata"
 START_TIME_KEY: Final[str] = "start_time"
 END_TIME_KEY: Final[str] = "end_time"
 NAME_KEY: Literal["name"] = "name"

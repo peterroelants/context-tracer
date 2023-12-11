@@ -1,4 +1,3 @@
-import dataclasses
 import json
 import logging
 from datetime import datetime, timedelta
@@ -23,7 +22,7 @@ JSONDictType = dict[str, JSONType]
 
 
 # JSON Encoder #####################################################
-class AnyEncoder(json.JSONEncoder):
+class CustomEncoder(json.JSONEncoder):
     def default(self, obj: Any):
         """Returns a serializable object for `obj` that can be serialized to a json string."""
         return make_serializable_base(obj)
@@ -68,48 +67,11 @@ def make_serializable_base(obj: Any) -> JSONType:
         return repr(obj)
     if isinstance(obj, bool):
         return obj
-    if isinstance(obj, bytes):
-        return serialize_bytes(obj)
     if isinstance(obj, datetime):
         return obj.astimezone().isoformat(sep=" ")
     if isinstance(obj, timedelta):
         return format_timedelta(obj)
-    if isnamedtuple(obj):
-        return serialize_namedtuple(obj)
-    if dataclasses.is_dataclass(obj):
-        return dataclasses.asdict(obj)
-    for attr in ["dict", "as_dict", "to_dict", "model_dump"]:
-        if hasattr(obj, attr):
-            try:
-                result = getattr(obj, attr)
-                if callable(result):
-                    result = result()
-                assert isinstance(result, dict)
-                return make_serializable(result)
-            except Exception:
-                continue
-    for attr in ["tolist", "to_list", "as_list"]:
-        if hasattr(obj, attr):
-            try:
-                result = getattr(obj, attr)
-                if callable(result):
-                    result = result()
-                assert isinstance(result, list)
-                return make_serializable(result)
-            except Exception:
-                continue
-    for attr in ["json", "to_json", "as_json", "model_dump_json"]:
-        if hasattr(obj, attr):
-            try:
-                result = getattr(obj, attr)
-                if callable(result):
-                    result = result()
-                if isinstance(result, str):
-                    result = json.loads(result)
-                    return make_serializable(result)
-            except Exception:
-                continue
-    return repr(obj)
+    return shorted_repr(obj)
 
 
 def serialize_key(key: Any) -> str:
@@ -128,8 +90,8 @@ def serialize_namedtuple(val: NamedTuple) -> dict:
     return {k: v for k, v in val._asdict().items()}
 
 
-def serialize_bytes(val: bytes) -> str:
-    try:
-        return val.decode("utf-8")
-    except Exception:
-        return repr(val)
+def shorted_repr(val: Any) -> str:
+    val_str = repr(val)
+    if len(val_str) > 100:
+        val_str = val_str[:50] + "..." + val_str[-50:]
+    return val_str

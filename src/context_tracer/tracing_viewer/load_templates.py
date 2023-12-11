@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from jinja2 import BaseLoader, Environment
 
-from context_tracer.utils.json_encoder import AnyEncoder
+from context_tracer.utils.json_encoder import CustomEncoder
 from context_tracer.utils.url_utils import (
     urljoin_forward_slash,
 )
@@ -50,7 +50,7 @@ def get_flamechart_view(
             "No data provided, and no websocket url provided. Returning empty flame-chart that cannot be updated."
         )
     if data_dict:
-        data_json = json.dumps(data_dict, cls=AnyEncoder, indent=2)
+        data_json = json.dumps(data_dict, cls=CustomEncoder, indent=2)
         data_json = html.escape(data_json, quote=False)
     else:
         data_json = None

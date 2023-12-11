@@ -28,7 +28,7 @@ from context_tracer.utils.fast_api_utils.readiness import (
     READINESS_ENDPOINT_PATH,
     readiness_api,
 )
-from context_tracer.utils.json_encoder import AnyEncoder
+from context_tracer.utils.json_encoder import CustomEncoder
 from context_tracer.utils.logging_utils import setup_logging
 
 from .load_templates import get_flamechart_view
@@ -85,6 +85,9 @@ class ViewServerAPI:
         )
         return HTMLResponse(content=flamechart_view_html, status_code=HTTPStatus.OK)
 
+    # TODO: best way to handle websocket disconnects?
+    # TODO: Best way to exit websocket loop?
+    # https://github.com/tiangolo/fastapi/issues/709
     async def websocket_endpoint(self, websocket: WebSocket):
         """
         Websocket endpoint to send data to web client for viewing.
@@ -109,12 +112,13 @@ class ViewServerAPI:
             await asyncio.sleep(1)
         log.debug(f"{self._websocket_active=!r}")
         # Try sending last data
+        await asyncio.sleep(1)
         try:
             tree_json = await self.get_full_span_tree_json()
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.send_text(tree_json)
         except Exception as exc:
-            log.warning(f"Client disconnected: {exc}")
+            log.warning(f"Client disconnected: {type(exc).__name__}: {exc}")
         await websocket.close()
 
     async def get_full_span_tree_json(self) -> str:
@@ -122,7 +126,7 @@ class ViewServerAPI:
         dict_tree = await self.get_full_span_tree()
         tree_json = json.dumps(
             dict_tree,
-            cls=AnyEncoder,
+            cls=CustomEncoder,
             separators=(",", ":"),
         )
         tree_json = html.escape(tree_json, quote=False)

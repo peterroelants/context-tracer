@@ -22,7 +22,7 @@ from context_tracer.utils.fast_api_utils.readiness import (
     readiness_api,
 )
 from context_tracer.utils.id_utils import uid_to_bytes, uid_to_str
-from context_tracer.utils.json_encoder import AnyEncoder
+from context_tracer.utils.json_encoder import CustomEncoder
 from context_tracer.utils.logging_utils import setup_logging
 
 log = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ class SpanClientAPI:
         span_uid: str = SpanPayload.uid_to_str(uid)
         request_payload: SpanPayload = SpanPayload.from_bytes_ids(
             name=name,
-            data_json=json.dumps(data, cls=AnyEncoder),
+            data_json=json.dumps(data, cls=CustomEncoder),
             parent_uid=parent_uid,
         )
         resp = requests.put(
@@ -169,7 +169,7 @@ class SpanClientAPI:
 
     def patch_update_span(self, uid: bytes, data: dict[str, Any]) -> None:
         span_uid = SpanPayload.uid_to_str(uid)
-        request_payload = SpanDataPayload(data_json=json.dumps(data, cls=AnyEncoder))
+        request_payload = SpanDataPayload(data_json=json.dumps(data, cls=CustomEncoder))
         resp = requests.patch(
             f"{self.url}{SPAN_ENDPOINT_PATH.format(span_uid=span_uid)}",
             json=request_payload.model_dump(),

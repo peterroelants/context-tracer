@@ -18,6 +18,7 @@ from .constants import (
     FUNCTION_RETURNED_KEY,
     NAME_KEY,
     START_TIME_KEY,
+    TRACE_METADATA_KEY,
 )
 from .trace_types import (
     TraceSpan,
@@ -26,6 +27,7 @@ from .trace_types import (
     trace_span_context,
 )
 from .utils.func_utils import func2str, get_func_bound_args
+from .utils.merge_patch import merge_patch
 from .utils.types import ContextManagerProtocol, DecoratorMeta
 
 logger = logging.getLogger(__name__)
@@ -119,9 +121,12 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
         """
         Create a new span with the current one as parent (iff a current span exists).
         """
-        self.data[START_TIME_KEY] = get_local_timestamp().isoformat(
-            sep=" ", timespec="seconds"
-        )
+        metadata = {
+            TRACE_METADATA_KEY: {
+                START_TIME_KEY: get_local_timestamp().isoformat(sep=" ")
+            }
+        }
+        self.data = merge_patch(self.data, metadata)
         parent_span = get_current_span()
         if parent_span is not None:
             # Create a new span from the current span
@@ -140,10 +145,10 @@ class _TraceContextDecorator(metaclass=DecoratorMeta):
     ) -> None:
         """Exit the current trace span context and reset to the parent."""
         if self._trace_ctx_mngr is not None:
-            new_data: dict = {
-                END_TIME_KEY: get_local_timestamp().isoformat(
-                    sep=" ", timespec="seconds"
-                )
+            new_data = {
+                TRACE_METADATA_KEY: {
+                    END_TIME_KEY: get_local_timestamp().isoformat(sep=" ")
+                }
             }
             if __exc_type is not None or __exc_value is not None:
                 # Deal with exceptions
