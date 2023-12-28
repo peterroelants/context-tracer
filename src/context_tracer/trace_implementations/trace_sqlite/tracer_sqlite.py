@@ -129,3 +129,11 @@ class TracingSqlite(Tracing[TraceSpanSqlite, TraceTreeSqlite]):
     def tree(self) -> TraceTreeSqlite:
         """Return a representable version of the root of the trace tree."""
         return TraceTreeSqlite(span_db=self.span_db, span_uid=self._root_uid)
+
+    def __exit__(self, *args, **kwargs) -> None:
+        """Reset the tracing."""
+        try:
+            super().__exit__(*args, **kwargs)
+        finally:
+            self.span_db.wal_checkpoint()
+        return

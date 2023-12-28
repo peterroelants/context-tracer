@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import logging
 from datetime import datetime, timedelta
@@ -7,6 +8,8 @@ from typing import (
     TypeAlias,
     overload,
 )
+
+from pydantic import BaseModel
 
 from context_tracer.utils.time_utils import format_timedelta
 
@@ -57,6 +60,8 @@ def make_serializable_base(obj: Any) -> JSONType:
     """Returns a serializable object for `obj`."""
     if obj is None:
         return None
+    if isinstance(obj, bytes):
+        return shorted_repr(obj, max_characters=100)
     if isinstance(obj, str):
         return obj
     if isinstance(obj, int):
@@ -68,10 +73,16 @@ def make_serializable_base(obj: Any) -> JSONType:
     if isinstance(obj, bool):
         return obj
     if isinstance(obj, datetime):
-        return obj.astimezone().isoformat(sep=" ")
+        return obj.isoformat(sep=" ")
     if isinstance(obj, timedelta):
         return format_timedelta(obj)
-    return shorted_repr(obj)
+    if isnamedtuple(obj):
+        return serialize_namedtuple(obj)
+    if dataclasses.is_dataclass(obj):
+        return dataclasses.asdict(obj)
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    return shorted_repr(obj, max_characters=1000)
 
 
 def serialize_key(key: Any) -> str:
@@ -90,8 +101,9 @@ def serialize_namedtuple(val: NamedTuple) -> dict:
     return {k: v for k, v in val._asdict().items()}
 
 
-def shorted_repr(val: Any) -> str:
+def shorted_repr(val: Any, max_characters: int = 100) -> str:
     val_str = repr(val)
-    if len(val_str) > 100:
-        val_str = val_str[:50] + "..." + val_str[-50:]
+    if len(val_str) > max_characters:
+        half_size = min(len(val_str) // 2, max_characters // 2)
+        val_str = val_str[:half_size] + "..." + val_str[-half_size:]
     return val_str
