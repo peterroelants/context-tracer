@@ -58,6 +58,7 @@ class ViewServerAPI:
     websocket_path: str
     export_html_path: Path | None
     _websocket_active: bool = True
+    _root_uid: bytes | None = None
 
     def __init__(
         self,
@@ -66,12 +67,14 @@ class ViewServerAPI:
         port: int,
         websocket_path: str,
         export_html_path: Path | None = None,
+        root_uid: bytes | None = None,
     ) -> None:
         self.span_db = span_db
         self.host = host
         self.port = port
         self.websocket_path = websocket_path
         self.export_html_path = export_html_path
+        self._root_uid = root_uid
 
     async def view(self):
         """Main page to render flamechart."""
@@ -136,10 +139,13 @@ class ViewServerAPI:
         return tree_json
 
     async def get_full_span_tree(self) -> dict[str, Any]:
-        root_uids = self.span_db.get_root_uids()
-        if len(root_uids) == 0:
-            return {}
-        root = TraceTreeSqlite(span_db=self.span_db, span_uid=root_uids[-1])
+        root_id = self._root_uid
+        if root_id is None:
+            root_uids = self.span_db.get_root_uids()
+            if len(root_uids) == 0:
+                return {}
+            root_id = root_uids[-1]
+        root = TraceTreeSqlite(span_db=self.span_db, span_uid=root_id)
         return trace_tree_to_dict(root)
 
     async def _export_html(self) -> None:
@@ -201,6 +207,7 @@ class ViewServerAPI:
         export_html_path: Path | None = None,
         log_path: Path | None = None,
         log_level: int = logging.INFO,
+        root_uid: bytes | None = None,
     ) -> FastAPI:
         """
         Returns a FastAPI app with the span server HTTP API endpoints.
@@ -214,6 +221,7 @@ class ViewServerAPI:
             port=port,
             websocket_path=websocket_path,
             export_html_path=export_html_path,
+            root_uid=root_uid,
         )
         app = FastAPI(lifespan=api.lifespan)
         app.mount(STATIC_PATH, StaticNoCache(directory=STATIC_FILES_DIR), name="static")
@@ -227,6 +235,7 @@ def create_view_server(
     db_path: Path,
     export_html_path: Path | None,
     log_path: Path | None = None,
+    root_uid: bytes | None = None,
     **server_kwargs,
 ) -> FastAPIProcessRunner:
     log.info(f"Create view server with db_path={db_path}")
@@ -240,6 +249,7 @@ def create_view_server(
         export_html_path=export_html_path,
         log_level=log_level,
         log_path=log_path,
+        root_uid=root_uid,
     )
     log.debug(f"Return FastAPIProcessRunner with {create_app=!r}")
     return FastAPIProcessRunner(create_app=create_app, **server_kwargs)
