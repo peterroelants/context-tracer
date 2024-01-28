@@ -3,8 +3,30 @@
 Package to help trace Python function call contexts. Initially developed to trace LLM Agent function calls.
 
 
-
 ## Usage
+
+To annotate a function to be traced, use the `@trace` decorator:
+```python
+from context_tracer.trace import trace
+
+@trace
+def demo_function():
+    ...
+```
+
+To run a function or program with tracing enabled, use a `Tracing` context manager. For example the `TracingWithViewer` will open a web browser to show a flame chart of the traced function calls:
+```python
+from context_tracer.tracing_viewer.tracer_with_view import TracingWithViewer
+
+with TracingWithViewer(
+    db_path=...,
+    ...
+) as tracing:
+    demo_function()
+```
+Other `Tracing` context managers are available, see [src/context_tracer/trace_implementations](src/context_tracer/trace_implementations) for more details.
+
+### Full example
 
 See [notebooks/example.ipynb](notebooks/example.ipynb) for a usage example.
 
